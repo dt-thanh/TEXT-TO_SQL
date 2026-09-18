@@ -1,0 +1,25 @@
+# Secrets. TODO: Keep real credentials out of version control.
+.env
+.env.*
+!.env.example
+
+# Python caches and environments.
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.venv/
+venv/
+
+# Generated data and evaluation output.
+data/generated/
+eval/results/*
+!eval/results/.gitkeep
+
+# Local editor and OS files.
+.idea/
+.vscode/
+.DS_Store

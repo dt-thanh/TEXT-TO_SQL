@@ -1,0 +1,14 @@
+{
+  "_description": "Stub question-to-Snowflake-SQL examples for prompt construction.",
+  "_todo": "Replace placeholder columns with the finalized banking schema and add edge cases.",
+  "examples": [
+    {
+      "question": "Tổng số tiền giao dịch theo chi nhánh là bao nhiêu?",
+      "sql": "SELECT branch_id, SUM(amount) AS total_amount FROM fact_transaction GROUP BY branch_id LIMIT 100"
+    },
+    {
+      "question": "Năm khách hàng có số dư cao nhất?",
+      "sql": "SELECT customer_id, balance_amount FROM fact_account_balance ORDER BY balance_amount DESC LIMIT 5"
+    }
+  ]
+}
