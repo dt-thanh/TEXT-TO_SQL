@@ -1,17 +1,19 @@
-# Common local commands. TODO: Add format, type-check, and integration-test targets.
-.PHONY: install run test lint gen-data
+# Common local commands. Always run through the project venv, never the system Python.
+PY := .venv/bin/python
+
+.PHONY: install run test lint check-snowflake
 
 install:
-	python3.11 -m pip install -r requirements.txt
+	$(PY) -m pip install -r requirements.txt
 
 run:
-	python3.11 -m uvicorn src.main:app --reload
+	$(PY) -m uvicorn src.main:app --reload
 
 test:
-	python3.11 -m pytest
+	$(PY) -m pytest
 
 lint:
-	python3.11 -m ruff check .
+	$(PY) -m ruff check .
 
-gen-data:
-	python3.11 data/generate_data.py
+check-snowflake:
+	$(PY) -m scripts.check_snowflake
