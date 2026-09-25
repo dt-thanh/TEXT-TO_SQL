@@ -7,7 +7,8 @@ KHÔNG cần FastAPI, KHÔNG cần LangGraph. Chỉ chạy: python first_loop.py
 Chuẩn bị:
   1) pip install snowflake-connector-python openai python-dotenv
   2) Tạo file .env cùng thư mục với nội dung:
-        SNOWFLAKE_ACCOUNT=xxxxx        # định danh account, xem trong URL Snowflake (dạng org-account hoặc abc123.region)
+        # Định danh account, xem trong URL Snowflake (dạng org-account hoặc abc123.region)
+        SNOWFLAKE_ACCOUNT=xxxxx
         SNOWFLAKE_USER=ten_dang_nhap
         SNOWFLAKE_PASSWORD=mat_khau
         SNOWFLAKE_WAREHOUSE=WH_XS
@@ -15,9 +16,10 @@ Chuẩn bị:
 """
 
 import os
+
 import snowflake.connector
-from openai import OpenAI
 from dotenv import load_dotenv
+from openai import OpenAI
 
 load_dotenv()  # đọc các biến trong file .env vào môi trường
 

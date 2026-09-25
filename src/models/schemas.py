@@ -23,7 +23,7 @@ class AskRequest(BaseModel):
     TODO: Add optional conversation and semantic-model identifiers.
     """
 
-    question: str = Field(min_length=1, examples=["Tổng giao dịch theo chi nhánh?"])
+    question: str = Field(min_length=1, examples=["BTC ra sao khi lợi suất 10 năm > 4%?"])
 
 
 class AskResponse(BaseModel):
