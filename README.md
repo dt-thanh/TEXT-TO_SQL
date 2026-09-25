@@ -8,8 +8,9 @@ chạy và **hiển thị SQL** cùng kết quả.
 
 ## Trạng thái
 
-Phase 0 (nền móng) đã xong: config, logging, exception, Snowflake client dùng key-pair, script dựng
-Snowflake. `/ask` và LangGraph vẫn là skeleton; ingestion, dbt, UI chưa có.
+- Phase 0 (nền móng): config, logging, exception, Snowflake client dùng key-pair, script dựng Snowflake.
+- Phase 1 (đang làm): Binance client + extractor đã xong; nạp vào `RAW` chưa có.
+- `/ask` và LangGraph vẫn là skeleton; FRED, dbt, UI chưa có.
 
 ## Cài đặt
 
@@ -58,11 +59,21 @@ make test          # test integration tự skip cho tới khi cấu hình Snowfl
    make test              # test integration giờ phải PASS
    ```
 
+## Lấy dữ liệu Binance (chưa cần Snowflake)
+
+```bash
+python -m scripts.extract_binance --symbol BTCUSDT --start 2024-01-01 --end 2024-01-08
+```
+
+Khoảng thời gian là nửa mở `[start, end)` theo UTC; nến chưa đóng bị bỏ qua. Toàn bộ lịch sử 1h từ
+2019 của 4 symbol MVP (~257 nghìn nến) mất khoảng 40 giây qua REST API.
+
 ## Lệnh
 
 ```bash
 make run              # chạy API (uvicorn)
-make test             # pytest: unit + integration
+make test             # pytest: unit + integration (integration gọi Binance thật)
+make test-unit        # chỉ unit test, chạy offline được
 make lint             # ruff
 make check-snowflake  # kiểm tra kết nối Snowflake
 ```
@@ -72,12 +83,13 @@ make check-snowflake  # kiểm tra kết nối Snowflake
 ```text
 src/common/        config, logging, exception dùng chung
 src/services/      adapter ra bên ngoài: Snowflake, LLM, SQL guard
+src/ingestion/     lấy dữ liệu nguồn (Binance, sau này FRED) và nạp vào RAW
 src/agents/        LangGraph workflow (skeleton)
 src/api/           FastAPI routes
 infra/snowflake/   SQL dựng warehouse, database, schema, role, user
 scripts/           công cụ dòng lệnh, chạy bằng `python -m scripts.<tên>`
 tests/unit/        test không cần hệ thống ngoài
-tests/integration/ test chạy với Snowflake thật
+tests/integration/ test chạy với hệ thống thật (Snowflake, Binance)
 ```
 
 Ranh giới module: [docs/architecture.md](docs/architecture.md).
