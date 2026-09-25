@@ -22,6 +22,7 @@ def test_defaults_work_without_credentials() -> None:
     assert settings.snowflake_warehouse == "FINSIGHT_WH"
     assert settings.snowflake_role == "FINSIGHT_ENGINEER"
     assert settings.log_level == "INFO"
+    assert settings.binance_base_url == "https://api.binance.com"
 
 
 def test_secrets_are_hidden_when_printed() -> None:

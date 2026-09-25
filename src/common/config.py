@@ -21,6 +21,8 @@ class Settings(BaseSettings):
     snowflake_private_key_path: Path | None = None
     snowflake_private_key_passphrase: SecretStr | None = None
 
+    binance_base_url: str = "https://api.binance.com"
+
     fred_api_key: SecretStr = SecretStr("")
 
     llm_provider: Literal["openai", "anthropic"] = "openai"

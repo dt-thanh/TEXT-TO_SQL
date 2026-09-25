@@ -11,3 +11,7 @@ class ConfigError(FinSightError):
 
 class WarehouseError(FinSightError):
     """Connecting to or querying Snowflake failed."""
+
+
+class SourceAPIError(FinSightError):
+    """An external data source (Binance, FRED) failed or returned unusable data."""
