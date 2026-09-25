@@ -2,6 +2,9 @@
 .env
 .env.*
 !.env.example
+# Private keys belong in ~/.snowflake, never in the repo.
+*.p8
+*.pem
 
 # Python caches and environments.
 __pycache__/
