@@ -7,7 +7,7 @@ from typing import Any
 
 import snowflake.connector
 
-from src.config import Settings, get_settings
+from src.common.config import Settings, get_settings
 
 
 class SnowflakeClient:

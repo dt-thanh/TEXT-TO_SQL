@@ -3,7 +3,7 @@
 TODO: Implement provider selection, retries, timeouts, and structured output.
 """
 
-from src.config import Settings, get_settings
+from src.common.config import Settings, get_settings
 
 
 class LLMClient:
