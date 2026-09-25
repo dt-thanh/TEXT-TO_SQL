@@ -1,80 +1,83 @@
-# Text-to-SQL Agent trên Snowflake
+# FinSight AI
 
-Scaffold Python 3.11 cho một agent chuyển câu hỏi tự nhiên thành Snowflake SQL. Dự án dùng
-LangGraph để biểu diễn luồng generate → validate → execute → repair → explain và FastAPI làm
-giao diện chính.
+Nền tảng phân tích thị trường tài chính. Dữ liệu crypto (Binance) và vĩ mô (FRED) được nạp vào
+Snowflake, biến đổi bằng dbt, rồi người dùng hỏi bằng ngôn ngữ tự nhiên: hệ thống sinh, kiểm tra,
+chạy và **hiển thị SQL** cùng kết quả.
 
-Hiện tại đây chủ ý là **skeleton**: `/health` chạy thật, `/ask` trả stub, graph chạy bằng các
-placeholder xác định trước. Kết nối Snowflake, gọi LLM, SQL guard, sinh/nạp dữ liệu và evaluation
-đều có interface cùng comment `TODO`, chưa có logic production.
+Đặc tả đầy đủ: [FINSIGHT_AI_PROJECT_SPEC.md](FINSIGHT_AI_PROJECT_SPEC.md).
 
-## Quickstart
+## Trạng thái
 
-Yêu cầu Python 3.11.
+Phase 0 (nền móng) đã xong: config, logging, exception, Snowflake client dùng key-pair, script dựng
+Snowflake. `/ask` và LangGraph vẫn là skeleton; ingestion, dbt, UI chưa có.
+
+## Cài đặt
+
+### 1. Python 3.11
 
 ```bash
 python3.11 -m venv .venv
 source .venv/bin/activate
-python -m pip install -r requirements.txt
+make install
 cp .env.example .env
-uvicorn src.main:app --reload
+make test          # test integration tự skip cho tới khi cấu hình Snowflake
 ```
 
-Mở terminal khác để kiểm tra:
+### 2. Snowflake
+
+1. Tạo tài khoản trial: Enterprise, AWS, Asia Pacific (Singapore).
+2. Tạo key-pair cho service user, lưu ngoài repo:
+
+   ```bash
+   mkdir -p ~/.snowflake && chmod 700 ~/.snowflake
+   openssl genrsa 2048 | openssl pkcs8 -topk8 -inform PEM -out ~/.snowflake/finsight_svc_key.p8 -nocrypt
+   openssl rsa -in ~/.snowflake/finsight_svc_key.p8 -pubout -out ~/.snowflake/finsight_svc_key.pub
+   chmod 600 ~/.snowflake/finsight_svc_key.p8
+   ```
+
+3. Trong Snowsight: mở [infra/snowflake/00_setup.sql](infra/snowflake/00_setup.sql), thay
+   `<YOUR_LOGIN_NAME>` bằng kết quả `SELECT CURRENT_USER();`, rồi Run All.
+4. Gắn public key cho `FINSIGHT_SVC`:
+
+   ```bash
+   grep -v "PUBLIC KEY" ~/.snowflake/finsight_svc_key.pub | tr -d '\n'; echo
+   ```
+
+   ```sql
+   USE ROLE USERADMIN;
+   ALTER USER FINSIGHT_SVC SET RSA_PUBLIC_KEY = '<kết quả lệnh trên>';
+   ```
+
+5. Điền `.env`:
+   - `SNOWFLAKE_ACCOUNT`: kết quả `SELECT CURRENT_ORGANIZATION_NAME() || '-' || CURRENT_ACCOUNT_NAME();`
+   - `SNOWFLAKE_PRIVATE_KEY_PATH`: đường dẫn tuyệt đối tới file `.p8` (`~` không được hiểu).
+6. Kiểm tra:
+
+   ```bash
+   make check-snowflake   # in account, user, role, warehouse đang dùng
+   make test              # test integration giờ phải PASS
+   ```
+
+## Lệnh
 
 ```bash
-curl http://127.0.0.1:8000/health
-# {"status":"ok"}
+make run              # chạy API (uvicorn)
+make test             # pytest: unit + integration
+make lint             # ruff
+make check-snowflake  # kiểm tra kết nối Snowflake
 ```
 
-`/health` không cần credential. Trước khi tự triển khai `/ask`, hãy điền Snowflake và khóa của
-provider đã chọn trong `.env`; không commit file này.
+## Cấu trúc
 
-## API stub
-
-```bash
-curl -X POST http://127.0.0.1:8000/ask \
-  -H 'Content-Type: application/json' \
-  -d '{"question":"Tổng giao dịch theo chi nhánh?"}'
+```text
+src/common/        config, logging, exception dùng chung
+src/services/      adapter ra bên ngoài: Snowflake, LLM, SQL guard
+src/agents/        LangGraph workflow (skeleton)
+src/api/           FastAPI routes
+infra/snowflake/   SQL dựng warehouse, database, schema, role, user
+scripts/           công cụ dòng lệnh, chạy bằng `python -m scripts.<tên>`
+tests/unit/        test không cần hệ thống ngoài
+tests/integration/ test chạy với Snowflake thật
 ```
 
-Response hiện có `status: "stub"` và chưa gọi Snowflake hay LLM.
-
-## Kiến trúc
-
-```mermaid
-flowchart LR
-    Q[Question] --> G[Generate SQL]
-    G --> V[Validate SQL]
-    V -->|valid| E[Execute on Snowflake]
-    V -->|invalid| R[Repair SQL]
-    E -->|error| R
-    R --> V
-    E -->|success| X[Explain result]
-```
-
-Chi tiết ranh giới module nằm ở [`docs/architecture.md`](docs/architecture.md).
-
-## Lệnh tiện ích
-
-```bash
-make run       # chạy uvicorn
-make test      # chạy pytest
-make lint      # chạy ruff
-make gen-data  # hiện là stub, chưa tạo CSV
-```
-
-Docker cũng có sẵn:
-
-```bash
-docker compose up --build
-```
-
-## TODO chính
-
-1. Hiện thực `SQLGuard` bằng sqlglot: chỉ cho phép truy vấn đọc, chặn DML/DDL và `SELECT *`, ép
-   giới hạn số dòng.
-2. Hiện thực adapter OpenAI/Anthropic với temperature thấp và structured output.
-3. Hiện thực Snowflake client, schema introspection, query timeout và query tagging.
-4. Nối `/ask` vào graph, bổ sung dependency injection, tracing và error mapping.
-5. Tạo star schema ngân hàng giả, loader và execution-accuracy evaluation.
+Ranh giới module: [docs/architecture.md](docs/architecture.md).
