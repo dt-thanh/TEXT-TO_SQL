@@ -1,7 +1,7 @@
 # Common local commands. Always run through the project venv, never the system Python.
 PY := .venv/bin/python
 
-.PHONY: install run test lint check-snowflake
+.PHONY: install run test test-unit lint check-snowflake
 
 install:
 	$(PY) -m pip install -r requirements.txt
@@ -17,3 +17,6 @@ lint:
 
 check-snowflake:
 	$(PY) -m scripts.check_snowflake
+
+test-unit:
+	$(PY) -m pytest tests/unit

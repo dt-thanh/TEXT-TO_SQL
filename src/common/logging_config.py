@@ -13,6 +13,8 @@ def setup_logging(level: str = "INFO") -> None:
 
     root = logging.getLogger()
     root.setLevel(level)
+    # httpx logs every request at INFO; a backfill makes hundreds. Our clients log what matters.
+    logging.getLogger("httpx").setLevel(logging.WARNING)
     if any(handler.get_name() == HANDLER_NAME for handler in root.handlers):
         return
 
