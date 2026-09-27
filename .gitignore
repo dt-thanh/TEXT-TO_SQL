@@ -26,3 +26,8 @@ eval/results/*
 .idea/
 .vscode/
 .DS_Store
+
+# dbt build output and downloaded packages (re-created by `make dbt-deps` / `make dbt-build`).
+dbt/target/
+dbt/logs/
+dbt/dbt_packages/

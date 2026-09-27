@@ -1,0 +1,16 @@
+# The dbt project: turns RAW tables into STAGING → CORE → MART with SQL SELECTs, and tests them.
+# Run it through the Makefile (make dbt-build) so Snowflake settings are loaded from ../.env.
+name: finsight
+version: "1.0.0"
+profile: finsight
+
+model-paths: ["models"]
+macro-paths: ["macros"]
+test-paths: ["tests"]
+
+models:
+  finsight:
+    # Spec §9: STAGING only cleans and standardizes. Views are cheap and always show current RAW.
+    staging:
+      +schema: staging
+      +materialized: view

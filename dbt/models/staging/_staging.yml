@@ -1,0 +1,100 @@
+# Documentation and data tests for the staging models (spec §18).
+# Each test is a query that returns the rows breaking a rule; zero rows = pass.
+# "warn" tests flag known, accepted source quirks without failing the build.
+version: 2
+
+models:
+  - name: stg_binance_kline
+    description: Binance 1h candles in UTC, one row per symbol + interval_code + open_time.
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [symbol, interval_code, open_time]
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: "high_price >= low_price"
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: "high_price >= greatest(open_price, close_price)"
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: "low_price <= least(open_price, close_price)"
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: "base_volume >= 0 and quote_volume >= 0 and trade_count >= 0"
+      - dbt_utils.expression_is_true:
+          name: binance_candles_are_full_hours
+          arguments:
+            expression: "is_full_candle"
+          config:
+            severity: warn
+    columns:
+      - name: symbol
+        description: Binance trading pair, e.g. BTCUSDT.
+        data_tests:
+          - not_null
+          # Until CORE.DIM_ASSET exists (lesson 6), the MVP universe is listed here.
+          - accepted_values:
+              arguments:
+                values: [BTCUSDT, ETHUSDT, SOLUSDT, BNBUSDT]
+      - name: interval_code
+        description: Candle length. Only 1h in the MVP.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ["1h"]
+      - name: open_time
+        description: Candle start, UTC.
+        data_tests:
+          - not_null
+      - name: trade_date
+        description: UTC calendar date of open_time. Crypto trades every day, weekends included.
+        data_tests:
+          - not_null
+      - name: close_price
+        data_tests:
+          - not_null
+      - name: is_full_candle
+        description: False when the candle closed early (exchange halt) or has an odd close_time.
+
+  - name: stg_fred_observation
+    description: >
+      FRED values, one row per vintage. A vintage is the latest known value for its
+      observation_date from realtime_start through realtime_end.
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [series_id, observation_date, realtime_start]
+      - dbt_utils.expression_is_true:
+          name: fred_values_published_after_the_day_they_describe
+          arguments:
+            expression: "realtime_start >= observation_date"
+      - dbt_utils.expression_is_true:
+          name: fred_vintage_periods_are_ordered
+          arguments:
+            expression: "realtime_end >= realtime_start"
+      - dbt_utils.expression_is_true:
+          name: fred_missing_values_are_dots
+          arguments:
+            expression: "is_missing = (value_raw = '.')"
+    columns:
+      - name: series_id
+        description: FRED series, e.g. DGS10 (10-year Treasury yield), DFF (Fed Funds rate).
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [DFF, DGS10]
+      - name: observation_date
+        description: The day (or month) the value describes.
+        data_tests:
+          - not_null
+      - name: realtime_start
+        description: The day FRED published this value. Use it for point-in-time lookups.
+        data_tests:
+          - not_null
+      - name: realtime_end
+        description: Last day this vintage was the latest known value (9999-12-31 = still current).
+      - name: value
+        description: Numeric value; NULL when FRED had no value that day (value_raw = ".").

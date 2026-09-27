@@ -1,0 +1,19 @@
+# Declares the RAW tables that the Python loaders fill, so models can read them with
+# {{ source('raw', '<table>') }} instead of hard-coded names. dbt then knows they are the
+# start of the lineage graph (see `make dbt-docs`).
+version: 2
+
+sources:
+  - name: raw
+    description: Source data exactly as src/ingestion MERGEs it. Never edited by dbt.
+    database: "{{ target.database }}"
+    schema: RAW
+    tables:
+      - name: raw_binance_kline
+        description: Binance spot 1h candles. Grain symbol + interval_code + open_time.
+      - name: raw_fred_series
+        description: FRED series metadata. Grain series_id.
+      - name: raw_fred_observation
+        description: >
+          FRED values, one row per vintage. Grain series_id + observation_date + realtime_start
+          (the day FRED published the value). realtime_end is NULL here; staging derives it.

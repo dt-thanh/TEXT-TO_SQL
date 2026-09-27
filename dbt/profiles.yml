@@ -1,0 +1,17 @@
+# How dbt connects to Snowflake. Every value comes from an environment variable that the
+# Makefile loads from ../.env, so this file holds no secrets and is safe to commit.
+# Same service user, key and role as the Python loaders (FINSIGHT_SVC / FINSIGHT_ENGINEER).
+finsight:
+  target: dev
+  outputs:
+    dev:
+      type: snowflake
+      account: "{{ env_var('SNOWFLAKE_ACCOUNT') }}"
+      user: "{{ env_var('SNOWFLAKE_USER') }}"
+      private_key_path: "{{ env_var('SNOWFLAKE_PRIVATE_KEY_PATH') }}"
+      role: "{{ env_var('SNOWFLAKE_ROLE') }}"
+      warehouse: "{{ env_var('SNOWFLAKE_WAREHOUSE') }}"
+      database: "{{ env_var('SNOWFLAKE_DATABASE') }}"
+      schema: STAGING
+      threads: 4
+      query_tag: finsight_dbt
