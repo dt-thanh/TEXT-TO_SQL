@@ -27,7 +27,8 @@ eval/results/*
 .vscode/
 .DS_Store
 
-# dbt build output and downloaded packages (re-created by `make dbt-deps` / `make dbt-build`).
+# dbt build output, downloaded packages and per-machine user id (re-created automatically).
 dbt/target/
 dbt/logs/
 dbt/dbt_packages/
+dbt/.user.yml
