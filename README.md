@@ -9,7 +9,8 @@ chạy và **hiển thị SQL** cùng kết quả.
 ## Trạng thái
 
 - Phase 0 (nền móng): config, logging, exception, Snowflake client dùng key-pair, script dựng Snowflake.
-- Phase 1 (đang làm): Binance client + extractor đã xong; nạp vào `RAW` chưa có.
+- Phase 1 (đang làm): lấy dữ liệu Binance và nạp idempotent vào `RAW` (MERGE) đã xong; chưa có backfill
+  tự động theo watermark.
 - `/ask` và LangGraph vẫn là skeleton; FRED, dbt, UI chưa có.
 
 ## Cài đặt
@@ -67,6 +68,18 @@ python -m scripts.extract_binance --symbol BTCUSDT --start 2024-01-01 --end 2024
 
 Khoảng thời gian là nửa mở `[start, end)` theo UTC; nến chưa đóng bị bỏ qua. Toàn bộ lịch sử 1h từ
 2019 của 4 symbol MVP (~257 nghìn nến) mất khoảng 40 giây qua REST API.
+
+## Nạp dữ liệu Binance vào Snowflake
+
+Chạy [01_raw_tables.sql](infra/snowflake/01_raw_tables.sql) một lần (role `FINSIGHT_ENGINEER`), rồi:
+
+```bash
+python -m scripts.load_binance --symbol BTCUSDT --start 2024-01-01 --end 2024-01-08
+```
+
+Dữ liệu đi qua một bảng tạm rồi được `MERGE` vào `RAW.RAW_BINANCE_KLINE` theo khóa
+`(symbol, interval_code, open_time)`. Chạy lại cùng lệnh không thêm dòng nào; nến bị sửa thì cập nhật
+đúng dòng đó.
 
 ## Lệnh
 
