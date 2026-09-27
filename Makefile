@@ -1,7 +1,7 @@
 # Common local commands. Always run through the project venv, never the system Python.
 PY := .venv/bin/python
 
-.PHONY: install run test test-unit lint check-snowflake load-binance
+.PHONY: install run test test-unit lint check-snowflake load-binance load-fred
 
 install:
 	$(PY) -m pip install -r requirements.txt
@@ -23,3 +23,6 @@ test-unit:
 
 load-binance:
 	$(PY) -m scripts.load_binance
+
+load-fred:
+	$(PY) -m scripts.load_fred

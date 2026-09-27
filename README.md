@@ -11,7 +11,9 @@ chạy và **hiển thị SQL** cùng kết quả.
 - Phase 0 (nền móng): config, logging, exception, Snowflake client dùng key-pair, script dựng Snowflake.
 - Phase 1: Binance → `RAW` xong: nạp idempotent (MERGE), backfill theo từng tháng, incremental theo
   watermark cho 4 symbol MVP.
-- `/ask` và LangGraph vẫn là skeleton; FRED, dbt, UI chưa có.
+- Phase 2: FRED (DFF, DGS10) → `RAW`: giữ mọi vintage (mỗi lần công bố/sửa là một dòng), incremental theo
+  ngày công bố.
+- `/ask` và LangGraph vẫn là skeleton; dbt, UI chưa có.
 
 ## Cài đặt
 
@@ -90,6 +92,23 @@ Dữ liệu đi qua một bảng tạm rồi được `MERGE` vào `RAW.RAW_BINA
 `(symbol, interval_code, open_time)`. Chạy lại cùng lệnh không thêm dòng nào; nến bị sửa thì cập nhật
 đúng dòng đó.
 
+## Nạp dữ liệu FRED vào Snowflake
+
+Cần `FRED_API_KEY` trong `.env` và các bảng trong [01_raw_tables.sql](infra/snowflake/01_raw_tables.sql):
+
+```bash
+make load-fred                                   # lần đầu: backfill từ 2018-12-01; sau đó chỉ phần mới công bố
+python -m scripts.load_fred --start 2018-12-01   # nạp lại mọi thứ FRED công bố từ ngày đó
+```
+
+- Khóa `RAW_FRED_OBSERVATION` là `(series_id, observation_date, realtime_start)`: `realtime_start` là
+  ngày FRED công bố giá trị. Khi FRED sửa số liệu, RAW thêm một dòng mới; giá trị cũ được giữ lại để
+  tránh look-ahead bias.
+- Lấy dữ liệu bằng `output_type=3` (chỉ giá trị mới hoặc bị sửa), mỗi request một năm công bố
+  (FRED giới hạn 2000 vintage mỗi request).
+- Watermark = `MAX(realtime_start)`, mỗi lần incremental đọc lùi 7 ngày.
+- `value_raw = "."` nghĩa là hôm đó không có giá trị (ngày lễ); khi đó `value` là `NULL`.
+
 ## Lệnh
 
 ```bash
@@ -99,6 +118,7 @@ make test-unit        # chỉ unit test, chạy offline được
 make lint             # ruff
 make check-snowflake  # kiểm tra kết nối Snowflake
 make load-binance     # nạp incremental Binance → RAW
+make load-fred        # nạp incremental FRED → RAW
 ```
 
 ## Cấu trúc
@@ -106,7 +126,8 @@ make load-binance     # nạp incremental Binance → RAW
 ```text
 src/common/        config, logging, exception dùng chung
 src/services/      adapter ra bên ngoài: Snowflake, LLM, SQL guard
-src/ingestion/     lấy dữ liệu nguồn (Binance, sau này FRED) và nạp vào RAW
+src/ingestion/     lấy dữ liệu nguồn (Binance, FRED) và nạp vào RAW; phần dùng chung: retrying_http,
+                   merge_loader
 src/agents/        LangGraph workflow (skeleton)
 src/api/           FastAPI routes
 infra/snowflake/   SQL dựng warehouse, database, schema, role, user
