@@ -9,8 +9,8 @@ chạy và **hiển thị SQL** cùng kết quả.
 ## Trạng thái
 
 - Phase 0 (nền móng): config, logging, exception, Snowflake client dùng key-pair, script dựng Snowflake.
-- Phase 1 (đang làm): lấy dữ liệu Binance và nạp idempotent vào `RAW` (MERGE) đã xong; chưa có backfill
-  tự động theo watermark.
+- Phase 1: Binance → `RAW` xong: nạp idempotent (MERGE), backfill theo từng tháng, incremental theo
+  watermark cho 4 symbol MVP.
 - `/ask` và LangGraph vẫn là skeleton; FRED, dbt, UI chưa có.
 
 ## Cài đặt
@@ -74,8 +74,17 @@ Khoảng thời gian là nửa mở `[start, end)` theo UTC; nến chưa đóng 
 Chạy [01_raw_tables.sql](infra/snowflake/01_raw_tables.sql) một lần (role `FINSIGHT_ENGINEER`), rồi:
 
 ```bash
-python -m scripts.load_binance --symbol BTCUSDT --start 2024-01-01 --end 2024-01-08
+make load-binance                                    # incremental: từ watermark của từng symbol tới hiện tại
+python -m scripts.load_binance --start 2019-01-01    # nạp lại/backfill một khoảng cho cả 4 symbol
+python -m scripts.load_binance --symbols BTCUSDT --start 2024-01-01 --end 2024-01-08
 ```
+
+- Watermark = `MAX(open_time)` của symbol trong RAW. Symbol chưa có dữ liệu thì nạp từ 2019-01-01.
+- Mỗi lần incremental đọc lùi 1 ngày trước watermark; MERGE khiến phần chồng lấn không sinh trùng.
+- Khoảng thời gian được chia theo tháng UTC, mỗi tháng MERGE và commit riêng: chết giữa chừng thì chạy
+  lại, phần đã xong không mất.
+- Watermark chỉ nhìn phần mới nhất: lỗ hổng hoặc dòng sai *phía trước* watermark phải sửa bằng một lần
+  nạp có `--start`.
 
 Dữ liệu đi qua một bảng tạm rồi được `MERGE` vào `RAW.RAW_BINANCE_KLINE` theo khóa
 `(symbol, interval_code, open_time)`. Chạy lại cùng lệnh không thêm dòng nào; nến bị sửa thì cập nhật
@@ -89,6 +98,7 @@ make test             # pytest: unit + integration (integration gọi Binance th
 make test-unit        # chỉ unit test, chạy offline được
 make lint             # ruff
 make check-snowflake  # kiểm tra kết nối Snowflake
+make load-binance     # nạp incremental Binance → RAW
 ```
 
 ## Cấu trúc
