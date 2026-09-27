@@ -6,6 +6,8 @@ import time
 HANDLER_NAME = "finsight"
 LOG_FORMAT = "%(asctime)s | %(levelname)-7s | %(name)s | %(message)s"
 DATE_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
+# Libraries that log every request or connection at INFO. Our own clients log what matters.
+NOISY_LOGGERS = ("httpx", "snowflake.connector")
 
 
 def setup_logging(level: str = "INFO") -> None:
@@ -13,8 +15,8 @@ def setup_logging(level: str = "INFO") -> None:
 
     root = logging.getLogger()
     root.setLevel(level)
-    # httpx logs every request at INFO; a backfill makes hundreds. Our clients log what matters.
-    logging.getLogger("httpx").setLevel(logging.WARNING)
+    for name in NOISY_LOGGERS:
+        logging.getLogger(name).setLevel(logging.WARNING)
     if any(handler.get_name() == HANDLER_NAME for handler in root.handlers):
         return
 
