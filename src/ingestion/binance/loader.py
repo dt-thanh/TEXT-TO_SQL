@@ -130,7 +130,7 @@ def load_klines(
         raise WarehouseError(f"Loading batch {batch_id} into {target_table} failed: {err}") from err
 
     result = LoadResult(batch_id, len(rows), inserted, updated)
-    logger.info(
+    logger.debug(
         "Loaded batch %s into %s: %d received, %d inserted, %d updated",
         batch_id,
         target_table,

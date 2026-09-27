@@ -117,7 +117,7 @@ def extract_klines(
             break
 
     closed = [kline for kline in klines if kline.close_time < now]
-    logger.info(
+    logger.debug(
         "Extracted %d closed %s %s candles in [%s, %s), dropped %d still open",
         len(closed),
         symbol,

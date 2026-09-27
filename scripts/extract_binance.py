@@ -41,6 +41,7 @@ def main(argv: list[str] | None = None) -> int:
         logger.error("Extraction failed: %s", err)
         return 1
 
+    logger.info("%d closed %s %s candles", len(klines), args.symbol, args.interval)
     for label, kline in (("first", klines[0]), ("last", klines[-1])) if klines else ():
         logger.info(
             "%-5s open_time=%s close=%s volume=%s trades=%d",
