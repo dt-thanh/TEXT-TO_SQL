@@ -13,7 +13,8 @@ chạy và **hiển thị SQL** cùng kết quả.
   watermark cho 4 symbol MVP.
 - Phase 2: FRED (DFF, DGS10) → `RAW`: giữ mọi vintage (mỗi lần công bố/sửa là một dòng), incremental theo
   ngày công bố.
-- `/ask` và LangGraph vẫn là skeleton; dbt, UI chưa có.
+- Phase 3 (đang làm): dbt — STAGING (`stg_binance_kline`, `stg_fred_observation`) + 22 data test.
+- `/ask` và LangGraph vẫn là skeleton; CORE, MART, UI chưa có.
 
 ## Cài đặt
 
@@ -109,6 +110,21 @@ python -m scripts.load_fred --start 2018-12-01   # nạp lại mọi thứ FRED 
 - Watermark = `MAX(realtime_start)`, mỗi lần incremental đọc lùi 7 ngày.
 - `value_raw = "."` nghĩa là hôm đó không có giá trị (ngày lễ); khi đó `value` là `NULL`.
 
+## Biến đổi dữ liệu bằng dbt
+
+Dự án dbt nằm trong [dbt/](dbt/). Makefile nạp `.env` rồi chạy dbt với cùng user/role như loader Python.
+
+```bash
+make dbt-deps    # một lần: cài dbt_utils
+make dbt-build   # tạo view STAGING và chạy toàn bộ data test
+make dbt-docs    # tài liệu + sơ đồ lineage tại http://localhost:8080
+```
+
+- `stg_binance_kline`: UTC rõ ràng, `trade_date`, cờ `is_full_candle` (nến bị cắt ngắn khi sàn tạm dừng).
+- `stg_fred_observation`: tính `realtime_end` của mỗi vintage = ngày trước vintage kế tiếp.
+- Test cảnh báo (`warn`) cho điểm bất thường đã biết của nguồn; test lỗi (`error`) cho điều không được phép
+  xảy ra, ví dụ khoảng trống dữ liệu > 12 giờ (dấu hiệu pipeline bỏ sót).
+
 ## Lệnh
 
 ```bash
@@ -119,6 +135,7 @@ make lint             # ruff
 make check-snowflake  # kiểm tra kết nối Snowflake
 make load-binance     # nạp incremental Binance → RAW
 make load-fred        # nạp incremental FRED → RAW
+make dbt-build        # dbt: tạo model + chạy data test
 ```
 
 ## Cấu trúc
@@ -131,6 +148,7 @@ src/ingestion/     lấy dữ liệu nguồn (Binance, FRED) và nạp vào RAW;
 src/agents/        LangGraph workflow (skeleton)
 src/api/           FastAPI routes
 infra/snowflake/   SQL dựng warehouse, database, schema, role, user
+dbt/               dự án dbt: RAW → STAGING → CORE → MART, kèm data test
 scripts/           công cụ dòng lệnh, chạy bằng `python -m scripts.<tên>`
 tests/unit/        test không cần hệ thống ngoài
 tests/integration/ test chạy với hệ thống thật (Snowflake, Binance)
