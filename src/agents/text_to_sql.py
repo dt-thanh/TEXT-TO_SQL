@@ -16,6 +16,7 @@ from typing import Any
 
 from src.agents.tools.schema_tools import get_schema_context
 from src.common.config import get_settings
+from src.common.exceptions import WarehouseError
 from src.services.llm import LLMClient, LLMUsage
 from src.services.snowflake_client import SnowflakeClient
 
@@ -55,6 +56,9 @@ class Answer:
     usage: LLMUsage
     llm_seconds: float
     sql_seconds: float
+    # Set when the generated SQL failed in Snowflake. The SQL is still returned: the analyst must
+    # see what was tried (spec §3.1), and the repair loop (lesson 12) will feed this back.
+    error: str | None = None
 
 
 @lru_cache
@@ -123,8 +127,22 @@ def answer_question(
                       generated.llm_seconds, 0.0)  # fmt: skip
 
     started = time.perf_counter()
-    # Read one row more than we show, only to know whether the result was cut.
-    rows = warehouse.execute(generated.sql, max_rows=max_rows + 1)
+    try:
+        # Read one row more than we show, only to know whether the result was cut.
+        rows = warehouse.execute(generated.sql, max_rows=max_rows + 1)
+    except WarehouseError as err:
+        logger.warning("Generated SQL failed: %s", err)
+        return Answer(
+            question=question,
+            sql=generated.sql,
+            explanation=generated.explanation,
+            rows=[],
+            truncated=False,
+            usage=generated.usage,
+            llm_seconds=generated.llm_seconds,
+            sql_seconds=time.perf_counter() - started,
+            error=str(err),
+        )
     sql_seconds = time.perf_counter() - started
     logger.info("SQL returned %d row(s) in %.1fs", min(len(rows), max_rows), sql_seconds)
 

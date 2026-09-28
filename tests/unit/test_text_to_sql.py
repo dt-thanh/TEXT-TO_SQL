@@ -9,7 +9,7 @@ import pytest
 from src.agents.text_to_sql import answer_question, build_user_prompt, system_prompt
 from src.agents.tools.schema_tools import format_schema_context
 from src.common.config import Settings
-from src.common.exceptions import ConfigError
+from src.common.exceptions import ConfigError, WarehouseError
 from src.services.llm import LLMResult, LLMUsage
 
 USAGE = LLMUsage(input_tokens=1500, output_tokens=120, cost_usd=0.0003)
@@ -42,6 +42,8 @@ class FakeWarehouse:
         self.calls.append((sql, max_rows))
         if "INFORMATION_SCHEMA" in sql:
             return METADATA
+        if "no_such_column" in sql:
+            raise WarehouseError("SQL compilation error: invalid identifier 'NO_SUCH_COLUMN'")
         return self.rows[:max_rows] if max_rows else self.rows
 
 
@@ -86,6 +88,16 @@ def test_rows_are_capped_and_the_cut_is_reported() -> None:
     assert len(answer.rows) == 3
     assert answer.truncated is True
     assert warehouse.calls[-1][1] == 4  # one extra row, only to detect the cut
+
+
+def test_failed_sql_is_returned_with_its_error_not_lost() -> None:
+    answer = answer_question(
+        "Oops?", llm=FakeLLM("SELECT no_such_column FROM t"), warehouse=FakeWarehouse([])
+    )
+
+    assert answer.sql == "SELECT no_such_column FROM t"
+    assert "invalid identifier" in answer.error
+    assert answer.rows == []
 
 
 def test_unanswerable_question_runs_no_sql() -> None:

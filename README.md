@@ -168,6 +168,21 @@ In ra SQL, giải thích từng bước, bảng kết quả và chi phí (gpt-4o
 Schema đưa cho model lấy từ `INFORMATION_SCHEMA` của MART, kèm mô tả cột do dbt ghi vào Snowflake
 (`persist_docs`). SQL chạy bằng role `FINSIGHT_AGENT` (chỉ SELECT được MART), timeout 30 giây, tối đa 100 dòng.
 
+### Đánh giá (execution accuracy)
+
+[eval/gold_questions.jsonl](eval/gold_questions.jsonl): 11 câu hỏi chuẩn (Level 1–7 của spec §27 + 1 câu không trả lời
+được), mỗi câu có SQL đáp án đã kiểm chứng. Chấm bằng cách so **kết quả chạy**, không so chữ SQL.
+
+```bash
+make eval-gold                                          # chỉ chạy SQL đáp án: $0
+make eval                                               # chấm cả bộ: ~11 lần gọi LLM ≈ $0,004
+make eval ARGS="--only q04 q10"                         # chấm lại vài câu
+make eval ARGS="--regrade eval/results/run_<...>.json"  # chấm lại SQL đã lưu: $0
+```
+
+Baseline (2026-09-28, gpt-4o-mini, chưa có SQL guard / semantic layer / repair): **8/11 = 73%**, $0,0036.
+Sai: q04 (lọc trước window), q10 (sai định nghĩa volatility + lọc trước LAG), q11 (bịa mã TSLAUSDT).
+
 ## Lệnh
 
 ```bash

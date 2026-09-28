@@ -49,6 +49,8 @@ def main(argv: list[str] | None = None) -> int:
     print(f"\nQUESTION\n{answer.question}\n")
     print(f"GENERATED SQL\n{answer.sql or '(none)'}\n")
     print(f"HOW THIS SQL WORKS\n{answer.explanation}\n")
+    if answer.error:
+        print(f"ERROR\n{answer.error}\n")
     print("RESULT")
     print(format_table(answer.rows))
     if answer.truncated or len(answer.rows) > SHOWN_ROWS:
