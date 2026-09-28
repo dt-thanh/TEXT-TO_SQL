@@ -1,0 +1,12 @@
+# Files Docker must NOT copy into the build context: virtualenvs, caches, build output, secrets.
+# Keeps image builds fast (the local .venv alone is ~1 GB) and keeps .env out of every image.
+.venv/
+.git/
+**/__pycache__/
+.pytest_cache/
+.ruff_cache/
+.env
+dbt/target/
+dbt/logs/
+dbt/dbt_packages/
+airflow/logs/

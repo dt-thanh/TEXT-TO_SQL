@@ -1,0 +1,119 @@
+# Local Airflow for FinSight: 4 containers instead of the official 8.
+# Trimmed from https://airflow.apache.org/docs/apache-airflow/3.3.2/docker-compose.yaml:
+# LocalExecutor runs tasks inside the scheduler, so Celery, Redis and workers are not needed on
+# one machine. Start it with `make airflow-up`; UI at http://localhost:8081 (airflow / airflow).
+# Host port 8081, not 8080: another local project already uses 8080. Inside Docker it is 8080.
+
+x-airflow-common: &airflow-common
+  build:
+    context: ..                      # repo root, so the Dockerfile can COPY requirements.txt
+    dockerfile: airflow/Dockerfile
+  image: finsight-airflow:3.3.2
+  # FinSight settings (Snowflake, FRED) come from the project .env, like for make/dbt locally.
+  env_file:
+    - ../.env
+  environment: &airflow-common-env
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__CORE__AUTH_MANAGER: airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
+    AIRFLOW__CORE__EXECUTION_API_SERVER_URL: http://airflow-apiserver:8080/execution/
+    # Shared secret the components use to sign task tokens. Fine for a laptop; not for production.
+    AIRFLOW__API_AUTH__JWT_SECRET: finsight-local-dev-only
+    AIRFLOW__API_AUTH__JWT_ISSUER: airflow
+    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "true"
+    AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+    AIRFLOW__SCHEDULER__ENABLE_HEALTH_CHECK: "true"
+    # Inside the container the Snowflake key lives where the volume below mounts it.
+    SNOWFLAKE_PRIVATE_KEY_PATH: /opt/secrets/finsight_svc_key.p8
+  volumes:
+    - ./dags:/opt/airflow/dags            # DAG files: edit on the host, Airflow picks them up
+    - ./logs:/opt/airflow/logs            # task logs, readable from the host
+    - ..:/opt/finsight                    # the FinSight repo: src/, scripts/, dbt/
+    - ${HOME}/.snowflake:/opt/secrets:ro  # the private key, read-only
+  # Run as your host user, so files written into the repo (dbt/target, logs) stay yours and
+  # the 600-permission key file is readable. The Makefile sets AIRFLOW_UID=$(id -u).
+  user: "${AIRFLOW_UID:-50000}:0"
+  depends_on: &airflow-common-depends-on
+    postgres:
+      condition: service_healthy
+
+services:
+  # Airflow's own metadata: DAG runs, task states, users. Not FinSight data (that is Snowflake).
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+    volumes:
+      - airflow-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "airflow"]
+      interval: 10s
+      retries: 5
+      start_period: 5s
+    restart: always
+
+  # One-off: create/upgrade the metadata tables and the airflow/airflow login, then exit.
+  airflow-init:
+    <<: *airflow-common
+    command: version
+    environment:
+      <<: *airflow-common-env
+      _AIRFLOW_DB_MIGRATE: "true"
+      _AIRFLOW_WWW_USER_CREATE: "true"
+      _AIRFLOW_WWW_USER_USERNAME: airflow
+      _AIRFLOW_WWW_USER_PASSWORD: airflow
+
+  # Web UI + REST API + the "execution API" tasks use to report back.
+  airflow-apiserver:
+    <<: *airflow-common
+    command: api-server
+    ports:
+      - "8081:8080"   # host:container
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/api/v2/monitor/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: always
+    depends_on:
+      <<: *airflow-common-depends-on
+      airflow-init:
+        condition: service_completed_successfully
+
+  # Decides what should run now and, with LocalExecutor, runs the tasks itself.
+  airflow-scheduler:
+    <<: *airflow-common
+    command: scheduler
+    healthcheck:
+      test: ["CMD-SHELL", 'airflow jobs check --job-type SchedulerJob --hostname "$${HOSTNAME}"']
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: always
+    depends_on:
+      <<: *airflow-common-depends-on
+      airflow-init:
+        condition: service_completed_successfully
+
+  # Reads the Python files in dags/ and stores what DAGs and tasks they define.
+  airflow-dag-processor:
+    <<: *airflow-common
+    command: dag-processor
+    healthcheck:
+      test: ["CMD-SHELL", 'airflow jobs check --job-type DagProcessorJob --hostname "$${HOSTNAME}"']
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: always
+    depends_on:
+      <<: *airflow-common-depends-on
+      airflow-init:
+        condition: service_completed_successfully
+
+volumes:
+  airflow-postgres:

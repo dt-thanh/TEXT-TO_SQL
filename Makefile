@@ -3,9 +3,12 @@ PY := .venv/bin/python
 # dbt reads Snowflake settings from environment variables: export everything in .env, then run
 # dbt from inside dbt/ so it finds dbt_project.yml and profiles.yml there.
 DBT := set -a && . ./.env && set +a && cd dbt && ../.venv/bin/dbt
+# Airflow runs in Docker (airflow/docker-compose.yml). AIRFLOW_UID=$(id -u) makes the containers
+# run as you, so files they write into the repo stay yours.
+AIRFLOW := AIRFLOW_UID=$$(id -u) docker compose -f airflow/docker-compose.yml
 
 .PHONY: install run test test-unit lint check-snowflake load-binance load-fred \
-	dbt-deps dbt-build dbt-docs
+	dbt-deps dbt-build dbt-docs airflow-up airflow-down airflow-check airflow-logs
 
 install:
 	$(PY) -m pip install -r requirements.txt
@@ -40,4 +43,18 @@ dbt-build:
 
 dbt-docs:
 	$(DBT) docs generate
-	$(DBT) docs serve --port 8080
+	$(DBT) docs serve --port 8082
+
+# Build the image if needed and start Airflow in the background. UI: http://localhost:8081
+airflow-up:
+	$(AIRFLOW) up -d --build
+
+airflow-down:
+	$(AIRFLOW) down
+
+# Lists DAG files Airflow failed to import (empty output = all good).
+airflow-check:
+	$(AIRFLOW) exec airflow-scheduler airflow dags list-import-errors
+
+airflow-logs:
+	$(AIRFLOW) logs -f --tail 100 airflow-scheduler

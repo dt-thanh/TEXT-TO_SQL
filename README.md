@@ -15,6 +15,7 @@ chạy và **hiển thị SQL** cùng kết quả.
   ngày công bố.
 - Phase 3: dbt — STAGING (3 view), CORE (star schema, `fct_crypto_kline_1h` incremental) và MART
   (`mart_asset_daily`, `mart_macro_daily` point-in-time, `mart_market_macro_daily`), 69 data test.
+- Phase 3b: Airflow (Docker) chạy toàn bộ pipeline mỗi ngày lúc 00:30 UTC.
 - `/ask` và LangGraph vẫn là skeleton; UI chưa có.
 
 ## Cài đặt
@@ -119,7 +120,7 @@ Dự án dbt nằm trong [dbt/](dbt/). Makefile nạp `.env` rồi chạy dbt v�
 make dbt-deps    # một lần: cài dbt_utils
 make dbt-build   # nạp seed, tạo STAGING + CORE, chạy toàn bộ data test
 make dbt-build ARGS="--full-refresh"   # xây lại cả model incremental từ đầu
-make dbt-docs    # tài liệu + sơ đồ lineage tại http://localhost:8080
+make dbt-docs    # tài liệu + sơ đồ lineage tại http://localhost:8082
 ```
 
 - `stg_binance_kline`: UTC rõ ràng, `trade_date`, cờ `is_full_candle` (nến bị cắt ngắn khi sàn tạm dừng).
@@ -133,6 +134,23 @@ make dbt-docs    # tài liệu + sơ đồ lineage tại http://localhost:8080
 - Test cảnh báo (`warn`) cho điểm bất thường đã biết của nguồn; test lỗi (`error`) cho điều không được phép
   xảy ra, ví dụ khoảng trống dữ liệu > 12 giờ (dấu hiệu pipeline bỏ sót).
 
+## Chạy tự động bằng Airflow
+
+Airflow 3.3 chạy trong Docker ([airflow/](airflow/)): Postgres (metadata của Airflow), api-server (giao diện),
+scheduler (LocalExecutor, chạy task), dag-processor (đọc file DAG). Cần Docker đang chạy.
+
+```bash
+make airflow-up      # build image (lần đầu vài phút) + khởi động; UI http://localhost:8081, airflow / airflow
+make airflow-check   # liệt kê DAG bị lỗi import (không in gì = ổn)
+make airflow-logs    # xem log scheduler
+make airflow-down    # tắt (metadata vẫn giữ trong volume Postgres)
+```
+
+DAG `finsight_daily` ([finsight_daily.py](airflow/dags/finsight_daily.py)), 00:30 UTC mỗi ngày:
+`load_binance` + `load_fred` (song song) → `dbt_build_staging` → `dbt_build_core` → `dbt_build_marts`.
+Mỗi task gọi lại đúng lệnh chạy tay (script Python, dbt) trong virtualenv riêng `/opt/finsight-venv` của image;
+Airflow chỉ lo lịch, thứ tự, thử lại (2 lần, cách 5 phút) và không cho hai lần chạy chồng nhau.
+
 ## Lệnh
 
 ```bash
@@ -144,6 +162,7 @@ make check-snowflake  # kiểm tra kết nối Snowflake
 make load-binance     # nạp incremental Binance → RAW
 make load-fred        # nạp incremental FRED → RAW
 make dbt-build        # dbt: tạo model + chạy data test
+make airflow-up       # Airflow: pipeline tự chạy hằng ngày (UI :8081)
 ```
 
 ## Cấu trúc
@@ -157,6 +176,7 @@ src/agents/        LangGraph workflow (skeleton)
 src/api/           FastAPI routes
 infra/snowflake/   SQL dựng warehouse, database, schema, role, user
 dbt/               dự án dbt: RAW → STAGING → CORE → MART, kèm data test
+airflow/           Airflow trong Docker: Dockerfile, docker-compose.yml, dags/
 scripts/           công cụ dòng lệnh, chạy bằng `python -m scripts.<tên>`
 tests/unit/        test không cần hệ thống ngoài
 tests/integration/ test chạy với hệ thống thật (Snowflake, Binance)
