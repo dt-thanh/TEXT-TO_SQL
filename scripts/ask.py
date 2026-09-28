@@ -47,7 +47,8 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     print(f"\nQUESTION\n{answer.question}\n")
-    print(f"GENERATED SQL\n{answer.sql or '(none)'}\n")
+    sql_title = "SQL (blocked by the guard, not run)" if answer.violations else "SQL (after guard)"
+    print(f"{sql_title}\n{answer.sql or '(none)'}\n")
     print(f"HOW THIS SQL WORKS\n{answer.explanation}\n")
     if answer.error:
         print(f"ERROR\n{answer.error}\n")

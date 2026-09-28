@@ -1,8 +1,8 @@
-"""The simplest Text-to-SQL loop (spec Phase 4): question → schema → LLM → SQL → Snowflake.
+"""The Text-to-SQL loop: question → schema → LLM → SQL → SQL guard → Snowflake.
 
-No LangGraph, no repair loop and no SQL guard yet (lessons 10-12). Safety today comes from the
-database: the SQL runs as FINSIGHT_AGENT, a role that can only SELECT from MART, with a
-statement timeout and a row cap.
+No LangGraph and no repair loop yet (lessons 11-12). Safety comes in layers: the SQL guard only
+lets one read-only query on the MART tables through and caps its rows (src/services/sql_guard.py),
+then the query runs as FINSIGHT_AGENT, a role that can only SELECT from MART, with a timeout.
 """
 
 import json
@@ -19,6 +19,7 @@ from src.common.config import get_settings
 from src.common.exceptions import WarehouseError
 from src.services.llm import LLMClient, LLMUsage
 from src.services.snowflake_client import SnowflakeClient
+from src.services.sql_guard import SQLGuard
 
 logger = logging.getLogger(__name__)
 
@@ -56,9 +57,11 @@ class Answer:
     usage: LLMUsage
     llm_seconds: float
     sql_seconds: float
-    # Set when the generated SQL failed in Snowflake. The SQL is still returned: the analyst must
-    # see what was tried (spec §3.1), and the repair loop (lesson 12) will feed this back.
+    # Set when the SQL guard blocked the query or Snowflake rejected it. The SQL is still returned:
+    # the analyst must see what was tried (spec §3.1), and the repair loop (lesson 12) will feed
+    # this back.
     error: str | None = None
+    violations: tuple[str, ...] = ()  # the guard's codes, only when it blocked the query
 
 
 @lru_cache
@@ -115,26 +118,47 @@ def answer_question(
     warehouse: SnowflakeClient | None = None,
     max_rows: int = MAX_ROWS,
 ) -> Answer:
-    """Full loop for one question. The generated SQL is always returned, even with no rows."""
+    """Full loop for one question. The SQL is always returned, even when nothing ran.
+
+    `Answer.sql` is the SQL that ran: the guard's rewrite (LIMIT added, comments removed). When
+    the guard blocks the query, it is the model's SQL, and nothing ran.
+    """
 
     llm = llm or LLMClient()
     warehouse = warehouse or agent_warehouse()
 
-    generated = generate_sql(question, get_schema_context(warehouse), llm)
+    schema = get_schema_context(warehouse)
+    generated = generate_sql(question, schema.prompt_text, llm)
     if not generated.sql:
         # The model said the data cannot answer this; its explanation says why.
         return Answer(question, "", generated.explanation, [], False, generated.usage,
                       generated.llm_seconds, 0.0)  # fmt: skip
 
+    checked = SQLGuard(schema.tables, max_rows=max_rows).validate_and_rewrite(generated.sql)
+    if not checked.is_valid:
+        logger.warning("SQL guard blocked the query: %s", checked.error)
+        return Answer(
+            question=question,
+            sql=generated.sql,
+            explanation=generated.explanation,
+            rows=[],
+            truncated=False,
+            usage=generated.usage,
+            llm_seconds=generated.llm_seconds,
+            sql_seconds=0.0,
+            error=f"Blocked by the SQL guard: {checked.error}",
+            violations=checked.violations,
+        )
+
     started = time.perf_counter()
     try:
-        # Read one row more than we show, only to know whether the result was cut.
-        rows = warehouse.execute(generated.sql, max_rows=max_rows + 1)
+        # The guard's LIMIT caps the rows in Snowflake; max_rows here is a second cap on fetching.
+        rows = warehouse.execute(checked.sql, max_rows=max_rows)
     except WarehouseError as err:
         logger.warning("Generated SQL failed: %s", err)
         return Answer(
             question=question,
-            sql=generated.sql,
+            sql=checked.sql,
             explanation=generated.explanation,
             rows=[],
             truncated=False,
@@ -144,14 +168,15 @@ def answer_question(
             error=str(err),
         )
     sql_seconds = time.perf_counter() - started
-    logger.info("SQL returned %d row(s) in %.1fs", min(len(rows), max_rows), sql_seconds)
+    logger.info("SQL returned %d row(s) in %.1fs", len(rows), sql_seconds)
 
     return Answer(
         question=question,
-        sql=generated.sql,
+        sql=checked.sql,
         explanation=generated.explanation,
-        rows=rows[:max_rows],
-        truncated=len(rows) > max_rows,
+        rows=rows,
+        # Our LIMIT was reached, so there may be more rows (or exactly max_rows; we cannot tell).
+        truncated=checked.limit_enforced and len(rows) >= max_rows,
         usage=generated.usage,
         llm_seconds=generated.llm_seconds,
         sql_seconds=sql_seconds,

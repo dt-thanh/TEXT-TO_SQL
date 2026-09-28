@@ -3,9 +3,13 @@
 Table and column names come from INFORMATION_SCHEMA, so the model is only ever shown columns
 that really exist (spec rule 6: never invent names). The descriptions are the ones written in
 dbt/models/marts/_marts.yml, which dbt copies into Snowflake as COMMENTs (persist_docs).
+
+The same rows give the SQL guard its table allowlist: the tables the model is shown are exactly
+the tables its SQL may read.
 """
 
 from collections import defaultdict
+from dataclasses import dataclass
 from typing import Any
 
 SCHEMA = "MART"
@@ -24,6 +28,14 @@ join FINSIGHT.INFORMATION_SCHEMA.COLUMNS as c
 where t.table_schema = %(schema)s
 order by t.table_name, c.ordinal_position
 """
+
+
+@dataclass(frozen=True)
+class SchemaContext:
+    """One metadata read, two uses: the text the model sees and the tables the guard allows."""
+
+    prompt_text: str
+    tables: frozenset[str]  # fully qualified, e.g. FINSIGHT.MART.MART_ASSET_DAILY
 
 
 def format_schema_context(rows: list[dict[str, Any]], database: str = "FINSIGHT") -> str:
@@ -45,7 +57,15 @@ def format_schema_context(rows: list[dict[str, Any]], database: str = "FINSIGHT"
     return "\n".join(lines).strip()
 
 
-def get_schema_context(client: Any) -> str:
-    """Schema text for the prompt. `client` is a SnowflakeClient (the agent's, in production)."""
+def table_names(rows: list[dict[str, Any]], database: str = "FINSIGHT") -> frozenset[str]:
+    return frozenset(f"{database}.{SCHEMA}.{row['TABLE_NAME']}" for row in rows)
 
-    return format_schema_context(client.execute(SCHEMA_SQL, {"schema": SCHEMA}))
+
+def get_schema_context(client: Any) -> SchemaContext:
+    """Prompt text and table allowlist. `client` is a SnowflakeClient (the agent's, in production).
+
+    If the lookup returns no rows, the allowlist is empty and the guard blocks every table.
+    """
+
+    rows = client.execute(SCHEMA_SQL, {"schema": SCHEMA})
+    return SchemaContext(prompt_text=format_schema_context(rows), tables=table_names(rows))

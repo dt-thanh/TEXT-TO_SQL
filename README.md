@@ -17,7 +17,9 @@ chạy và **hiển thị SQL** cùng kết quả.
   (`mart_asset_daily`, `mart_macro_daily` point-in-time, `mart_market_macro_daily`), 69 data test.
 - Phase 3b: Airflow (Docker) chạy toàn bộ pipeline mỗi ngày lúc 00:30 UTC.
 - Phase 4: Text-to-SQL tối giản — câu hỏi → schema MART (từ metadata Snowflake) → OpenAI → SQL → chạy bằng
-  user chỉ-đọc `FINSIGHT_AGENT_SVC`. Chưa có SQL guard, repair loop, UI.
+  user chỉ-đọc `FINSIGHT_AGENT_SVC`.
+- Phase 5: SQL guard (sqlglot) — chỉ cho một câu SELECT trên bảng MART được phép, không `SELECT *`, ép
+  LIMIT ≤ 100. Chưa có semantic layer, repair loop, UI.
 
 ## Cài đặt
 
@@ -168,6 +170,12 @@ In ra SQL, giải thích từng bước, bảng kết quả và chi phí (gpt-4o
 Schema đưa cho model lấy từ `INFORMATION_SCHEMA` của MART, kèm mô tả cột do dbt ghi vào Snowflake
 (`persist_docs`). SQL chạy bằng role `FINSIGHT_AGENT` (chỉ SELECT được MART), timeout 30 giây, tối đa 100 dòng.
 
+Trước khi chạy, SQL đi qua [SQL guard](src/services/sql_guard.py): parse thành cây cú pháp bằng sqlglot,
+chặn mọi thứ không phải một câu SELECT (DML/DDL/GRANT/USE/CALL, lệnh ghi giấu trong CTE, nhiều câu lệnh),
+chỉ cho đọc bảng có trong metadata MART (tên đầy đủ `FINSIGHT.MART.<bảng>`), không `SELECT *`, không table
+function, không `SYSTEM$`, rồi thêm/giảm LIMIT về tối đa 100. SQL được chạy là bản guard in lại từ cây đã
+kiểm tra (bỏ comment). Câu bị chặn không chạm tới Snowflake và trả về mã lỗi (`violations`) cho repair loop.
+
 ### Đánh giá (execution accuracy)
 
 [eval/gold_questions.jsonl](eval/gold_questions.jsonl): 11 câu hỏi chuẩn (Level 1–7 của spec §27 + 1 câu không trả lời
@@ -182,6 +190,8 @@ make eval ARGS="--regrade eval/results/run_<...>.json"  # chấm lại SQL đã 
 
 Baseline (2026-09-28, gpt-4o-mini, chưa có SQL guard / semantic layer / repair): **8/11 = 73%**, $0,0036.
 Sai: q04 (lọc trước window), q10 (sai định nghĩa volatility + lọc trước LAG), q11 (bịa mã TSLAUSDT).
+Sau SQL guard (regrade cùng SQL đó): vẫn 8/11, không câu nào bị chặn — guard giới hạn thiệt hại, không
+sửa lỗi nghĩa. `tests/integration/test_sql_guard_gold.py` kiểm tra guard không đổi đáp án của SQL gold.
 
 ## Lệnh
 

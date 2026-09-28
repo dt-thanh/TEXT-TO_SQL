@@ -7,12 +7,13 @@ from typing import Any
 import pytest
 
 from src.agents.text_to_sql import answer_question, build_user_prompt, system_prompt
-from src.agents.tools.schema_tools import format_schema_context
+from src.agents.tools.schema_tools import format_schema_context, table_names
 from src.common.config import Settings
 from src.common.exceptions import ConfigError, WarehouseError
 from src.services.llm import LLMResult, LLMUsage
 
 USAGE = LLMUsage(input_tokens=1500, output_tokens=120, cost_usd=0.0003)
+ASSET = "FINSIGHT.MART.MART_ASSET_DAILY"  # the only table in METADATA, so the only one allowed
 METADATA = [
     {"TABLE_NAME": "MART_ASSET_DAILY", "TABLE_COMMENT": "One row per asset per day.",
      "COLUMN_NAME": "SYMBOL", "DATA_TYPE": "TEXT", "COLUMN_COMMENT": "Binance pair."},
@@ -55,6 +56,10 @@ def test_schema_context_lists_real_columns_with_their_meaning() -> None:
     )
 
 
+def test_the_tables_in_the_metadata_are_the_allowlist() -> None:
+    assert table_names(METADATA) == {ASSET}
+
+
 def test_user_prompt_carries_today_so_last_month_can_be_resolved() -> None:
     prompt = build_user_prompt("Last month?", "SCHEMA TEXT", date(2026, 9, 28))
 
@@ -69,13 +74,13 @@ def test_system_prompt_includes_rules_and_verified_examples() -> None:
     assert "FINSIGHT.MART.MART_MARKET_MACRO_DAILY" in text  # from the few-shot examples
 
 
-def test_answer_runs_generated_sql_without_trailing_semicolon() -> None:
+def test_the_guards_rewrite_is_what_runs_and_what_is_shown() -> None:
     warehouse = FakeWarehouse([{"N": 1}])
 
     answer = answer_question("How many?", llm=FakeLLM("SELECT 1 AS n;"), warehouse=warehouse)
 
-    assert answer.sql == "SELECT 1 AS n"
-    assert warehouse.calls[-1][0] == "SELECT 1 AS n"
+    assert answer.sql == "SELECT\n  1 AS n\nLIMIT 100"
+    assert warehouse.calls[-1][0] == answer.sql
     assert answer.rows == [{"N": 1}]
     assert answer.usage.cost_usd == 0.0003
 
@@ -85,17 +90,43 @@ def test_rows_are_capped_and_the_cut_is_reported() -> None:
 
     answer = answer_question("All?", llm=FakeLLM("SELECT n"), warehouse=warehouse, max_rows=3)
 
+    assert answer.sql.endswith("LIMIT 3")  # the cap is in the SQL, so Snowflake stops early
     assert len(answer.rows) == 3
     assert answer.truncated is True
-    assert warehouse.calls[-1][1] == 4  # one extra row, only to detect the cut
+
+
+def test_a_limit_chosen_by_the_model_is_not_a_cut() -> None:
+    warehouse = FakeWarehouse([{"N": i} for i in range(3)])
+    llm = FakeLLM(f"SELECT close_price FROM {ASSET} ORDER BY close_price DESC LIMIT 3")
+
+    answer = answer_question("Top 3?", llm=llm, warehouse=warehouse, max_rows=3)
+
+    assert len(answer.rows) == 3
+    assert answer.truncated is False  # "top 3" asked for 3 rows; nothing was hidden
+
+
+@pytest.mark.parametrize(
+    ("sql", "violation"),
+    [(f"DELETE FROM {ASSET}", "not_select"),
+     ("SELECT symbol FROM FINSIGHT.RAW.RAW_BINANCE_KLINE", "table_not_allowed")],
+)  # fmt: skip
+def test_blocked_sql_never_reaches_snowflake(sql: str, violation: str) -> None:
+    warehouse = FakeWarehouse([])
+
+    answer = answer_question("Anything", llm=FakeLLM(sql), warehouse=warehouse)
+
+    assert answer.error.startswith("Blocked by the SQL guard")
+    assert answer.violations == (violation,)
+    assert answer.sql == sql  # shown to the analyst, although it did not run
+    assert all("INFORMATION_SCHEMA" in called for called, _ in warehouse.calls)
 
 
 def test_failed_sql_is_returned_with_its_error_not_lost() -> None:
-    answer = answer_question(
-        "Oops?", llm=FakeLLM("SELECT no_such_column FROM t"), warehouse=FakeWarehouse([])
-    )
+    llm = FakeLLM(f"SELECT no_such_column FROM {ASSET}")
 
-    assert answer.sql == "SELECT no_such_column FROM t"
+    answer = answer_question("Oops?", llm=llm, warehouse=FakeWarehouse([]))
+
+    assert "no_such_column" in answer.sql
     assert "invalid identifier" in answer.error
     assert answer.rows == []
 
