@@ -25,3 +25,8 @@ models:
     core:
       +schema: core
       +materialized: table
+    # Spec §11: business-ready tables that analysts and the Text-to-SQL agent query.
+    # Only this schema is readable by FINSIGHT_AGENT (infra/snowflake/00_setup.sql, block 4b).
+    marts:
+      +schema: mart
+      +materialized: table

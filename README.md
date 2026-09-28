@@ -13,9 +13,9 @@ chạy và **hiển thị SQL** cùng kết quả.
   watermark cho 4 symbol MVP.
 - Phase 2: FRED (DFF, DGS10) → `RAW`: giữ mọi vintage (mỗi lần công bố/sửa là một dòng), incremental theo
   ngày công bố.
-- Phase 3 (đang làm): dbt — STAGING (3 view) và CORE (`dim_date`, `dim_asset`, `dim_macro_indicator`,
-  `fct_crypto_kline_1h` incremental, `fct_macro_observation`), 48 data test.
-- `/ask` và LangGraph vẫn là skeleton; MART, UI chưa có.
+- Phase 3: dbt — STAGING (3 view), CORE (star schema, `fct_crypto_kline_1h` incremental) và MART
+  (`mart_asset_daily`, `mart_macro_daily` point-in-time, `mart_market_macro_daily`), 69 data test.
+- `/ask` và LangGraph vẫn là skeleton; UI chưa có.
 
 ## Cài đặt
 
@@ -127,6 +127,9 @@ make dbt-docs    # tài liệu + sơ đồ lineage tại http://localhost:8080
 - Seed (`dbt/seeds/*.csv`): danh sách coin và chỉ số vĩ mô do người định nghĩa, review như code.
 - CORE theo star schema: fact = sự kiện (nến, giá trị vĩ mô), dimension = đối tượng (ngày, tài sản, chỉ số).
   `fct_crypto_kline_1h` là incremental (chỉ MERGE dòng loader mới đổi, theo `loaded_at`).
+- MART: `mart_asset_daily` (OHLCV ngày, daily/log return, volatility 30 ngày × √365),
+  `mart_macro_daily` (mỗi ngày: giá trị vĩ mô mới nhất ĐÃ công bố — không look-ahead),
+  `mart_market_macro_daily` (bảng chính cho Text-to-SQL). Role `FINSIGHT_AGENT` chỉ đọc được schema này.
 - Test cảnh báo (`warn`) cho điểm bất thường đã biết của nguồn; test lỗi (`error`) cho điều không được phép
   xảy ra, ví dụ khoảng trống dữ liệu > 12 giờ (dấu hiệu pipeline bỏ sót).
 

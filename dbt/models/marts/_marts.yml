@@ -1,0 +1,123 @@
+# Documentation and tests for MART (spec §11). These descriptions are also what the Text-to-SQL
+# agent will read (lesson 11), so they say what each metric MEANS, not only its type.
+version: 2
+
+models:
+  - name: mart_asset_daily
+    description: >
+      One row per asset per finished UTC day. Daily OHLCV built from hourly candles, plus
+      daily return, log return and 30-day annualized volatility.
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [trade_date, symbol]
+      - dbt_utils.expression_is_true:
+          name: mart_asset_daily_candle_count_is_1_to_24
+          arguments:
+            expression: "candle_count between 1 and 24"
+      - dbt_utils.expression_is_true:
+          name: mart_asset_daily_price_cannot_drop_below_zero
+          arguments:
+            expression: "daily_return > -1"
+      - dbt_utils.expression_is_true:
+          name: mart_asset_daily_volatility_is_not_negative
+          arguments:
+            expression: "volatility_30d >= 0"
+    columns:
+      - name: trade_date
+        description: UTC calendar day.
+        data_tests:
+          - not_null
+          # No missing day per asset, so "previous row" in the return formula is "previous day".
+          - dbt_utils.sequential_values:
+              arguments:
+                interval: 1
+                datepart: day
+                group_by_columns: [symbol]
+      - name: symbol
+        description: Binance pair, e.g. BTCUSDT.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_asset')
+                field: symbol
+      - name: close_price
+        description: Close of the day's last hourly candle, in USDT.
+        data_tests: [not_null]
+      - name: candle_count
+        description: Hourly candles in the day; below 24 when Binance had an outage.
+      - name: daily_return
+        description: "close_price / previous day's close_price - 1. 0.02 means +2%."
+      - name: log_return
+        description: "ln(close_price / previous day's close_price). Log returns add up over days."
+      - name: volatility_30d
+        description: >
+          Realized volatility: sample standard deviation of the last 30 daily log returns,
+          annualized with sqrt(365) because crypto trades every day. 0.5 means 50% a year.
+          NULL for an asset's first 30 days.
+
+  - name: mart_macro_daily
+    description: >
+      One row per calendar day (weekends included) with the Fed Funds rate and the 10-year
+      Treasury yield an analyst could know that day: the newest value already published,
+      never a value published later (no look-ahead bias).
+    data_tests:
+      - dbt_utils.expression_is_true:
+          name: mart_macro_daily_uses_only_published_values
+          arguments:
+            expression: >
+              fed_rate_available_date <= market_date
+              and treasury_10y_available_date <= market_date
+      - dbt_utils.expression_is_true:
+          name: mart_macro_daily_treasury_value_is_recent
+          arguments:
+            expression: "treasury_10y_days_since_observation <= 7"
+          config:
+            severity: warn
+    columns:
+      - name: market_date
+        description: Calendar day the values were known on.
+        data_tests:
+          - unique
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_date')
+                field: date_day
+      - name: fed_funds_rate
+        description: Federal Funds Effective Rate in percent (4.33 = 4.33%).
+        data_tests: [not_null]
+      - name: fed_rate_source_date
+        description: The day the fed_funds_rate value describes.
+      - name: fed_rate_available_date
+        description: The day FRED published that value; always on or before market_date.
+      - name: treasury_10y
+        description: 10-year US Treasury yield in percent.
+        data_tests: [not_null]
+      - name: treasury_10y_source_date
+        description: The bond-market day the treasury_10y value describes.
+      - name: treasury_10y_available_date
+        description: The day FRED published that value; always on or before market_date.
+      - name: treasury_10y_is_carried_forward
+        description: True when nothing new was published on market_date (weekend, holiday).
+
+  - name: mart_market_macro_daily
+    description: >
+      Main analytics table: one row per asset per day with its return and volatility next to
+      the Fed Funds rate and 10-year Treasury yield known that day.
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [trade_date, symbol]
+      # The join must not multiply rows (the fan-out trap from the first lesson).
+      - dbt_utils.equal_rowcount:
+          arguments:
+            compare_model: ref('mart_asset_daily')
+    columns:
+      - name: treasury_10y
+        description: 10-year US Treasury yield in percent, as known on trade_date.
+        data_tests: [not_null]
+      - name: fed_funds_rate
+        description: Federal Funds Effective Rate in percent, as known on trade_date.
+        data_tests: [not_null]
