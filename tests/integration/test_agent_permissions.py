@@ -27,7 +27,9 @@ pytestmark = pytest.mark.skipif(
 
 # What Snowflake says when a role lacks a privilege. A failed CONNECTION says something else
 # ("JWT token is invalid"), so it can no longer make the "cannot" tests pass by accident.
-PERMISSION_DENIED = "does not exist or not authorized|Insufficient privileges"
+PERMISSION_DENIED = (
+    "does not exist or not authorized|Insufficient privileges|is not assigned to the executing user"
+)
 
 
 @pytest.fixture(scope="module")
@@ -65,6 +67,8 @@ def test_agent_can_read_mart(agent: SnowflakeClient) -> None:
         "SELECT COUNT(*) FROM FINSIGHT.RAW.RAW_BINANCE_KLINE",
         "DELETE FROM FINSIGHT.MART.MART_ASSET_DAILY",
         "CREATE TABLE FINSIGHT.MART.AGENT_WAS_HERE (x INT)",
+        # Trying to switch to the ENGINEER role (privilege escalation) must fail too.
+        "USE ROLE FINSIGHT_ENGINEER",
     ],
 )
 def test_agent_cannot_leave_mart_or_change_data(agent: SnowflakeClient, sql: str) -> None:
