@@ -1,0 +1,114 @@
+# Business metrics (spec §24): how each measure is computed from the MART tables.
+#
+# Column meanings (units, NULLs) live in dbt/models/marts/_marts.yml and reach the model through
+# the schema. This file adds what no single column says: formulas over several rows or columns,
+# the words analysts use for them (English and Vietnamese), and the traps to avoid.
+#
+# A metric is shown to the model only when the question contains one of its synonyms
+# (src/semantic/retriever.py). Matching ignores accents and case, and needs the words next to
+# each other in the same order ("lợi suất 10 năm" matches "loi suat 10 nam"); each word may go
+# on ("return" matches "returns"). A one-word synonym needs 3+ characters: "ma" would match the
+# Vietnamese "mà", "má", "mã" once accents are removed.
+
+metrics:
+  - id: daily_return
+    name: Daily return
+    synonyms:
+      - daily return
+      - daily performance
+      - daily gain
+      - daily loss
+      - return per day
+      - average return
+      - lợi nhuận trung bình
+      - lợi nhuận mỗi ngày
+      - lợi nhuận hằng ngày
+      - lợi nhuận ngày
+    sql: daily_return
+    unit: fraction (0.02 = +2%)
+    definition: Close-to-close change of one day, already a column.
+    pitfalls: >
+      AVG(daily_return) is the average daily return. For the return of a whole period use
+      period_return: SUM(daily_return) is not a period return.
+
+  - id: period_return
+    name: Return over a period
+    synonyms:
+      - total return
+      - cumulative return
+      - period return
+      - overall return
+      - gain
+      - lợi nhuận cả kỳ
+      - lợi nhuận tích lũy
+      - tổng lợi nhuận
+      - hiệu suất
+    sql: EXP(SUM(log_return)) - 1
+    unit: fraction (0.25 = +25% over the period)
+    definition: >
+      Compounded change over the days in the period: last close / close of the day before the
+      period - 1. Log returns add up over days, daily returns do not.
+    pitfalls: >
+      SUM(daily_return) is wrong and can even have the wrong sign (SOL, first half of 2025:
+      -18.2% real, +2.2% summed).
+
+  - id: annualized_volatility
+    name: Annualized volatility of a period
+    synonyms:
+      - volatility
+      - annualized volatility
+      - realized volatility
+      - market risk
+      - price risk
+      - độ biến động
+      - biến động
+      - quy ra năm
+      - rủi ro giá
+    sql: STDDEV_SAMP(log_return) * SQRT(365)
+    unit: fraction per year (0.45 = 45% a year)
+    definition: >
+      Sample standard deviation of the daily log returns of the days the question selects,
+      annualized with SQRT(365) because crypto trades every day.
+    pitfalls: >
+      Never AVG(volatility_30d) for a period: volatility_30d is a rolling 30-day value per day.
+      Use volatility_30d only when the question asks for the 30-day volatility on given days.
+
+  - id: volatility_30d
+    name: 30-day rolling volatility
+    synonyms:
+      - 30-day volatility
+      - 30 day volatility
+      - rolling volatility
+      - volatility_30d
+      - biến động 30 ngày
+    sql: volatility_30d
+    unit: fraction per year (0.5 = 50% a year)
+    definition: Column; annualized volatility of the 30 days up to and including trade_date.
+
+  - id: moving_average
+    name: Moving average of the close price
+    synonyms:
+      - moving average
+      - rolling average
+      - trung bình động
+      - đường trung bình
+    sql: >
+      AVG(close_price) OVER (PARTITION BY symbol ORDER BY trade_date
+      ROWS BETWEEN <n - 1> PRECEDING AND CURRENT ROW)
+    unit: USDT
+    definition: Average close of the n days up to and including trade_date (n = 7 for 7-day).
+    pitfalls: >
+      The window needs the n - 1 days BEFORE the first day asked for. Compute it in a CTE over
+      the whole history, then filter the dates in the outer query.
+
+  - id: trading_volume
+    name: Trading volume in USDT
+    synonyms:
+      - volume
+      - turnover
+      - khối lượng giao dịch
+      - thanh khoản
+    sql: SUM(quote_volume)
+    unit: USDT
+    definition: Value traded. quote_volume is in USDT; base_volume counts coins.
+    pitfalls: Compare assets with quote_volume; base_volume of BTC and SOL are different units.

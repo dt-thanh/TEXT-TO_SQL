@@ -19,7 +19,9 @@ chạy và **hiển thị SQL** cùng kết quả.
 - Phase 4: Text-to-SQL tối giản — câu hỏi → schema MART (từ metadata Snowflake) → OpenAI → SQL → chạy bằng
   user chỉ-đọc `FINSIGHT_AGENT_SVC`.
 - Phase 5: SQL guard (sqlglot) — chỉ cho một câu SELECT trên bảng MART được phép, không `SELECT *`, ép
-  LIMIT ≤ 100. Chưa có semantic layer, repair loop, UI.
+  LIMIT ≤ 100.
+- Phase 6: semantic layer (`semantic/*.yml`: phạm vi dữ liệu, định nghĩa metric, glossary, SQL mẫu đã kiểm
+  chứng) + retrieval theo từ đồng nghĩa (Việt/Anh, có/không dấu). Chưa có repair loop, UI.
 
 ## Cài đặt
 
@@ -166,7 +168,8 @@ Airflow chỉ lo lịch, thứ tự, thử lại (2 lần, cách 5 phút) và kh
 make ask Q="BTC biến động thế nào khi lợi suất 10 năm trên 4%?"
 ```
 
-In ra SQL, giải thích từng bước, bảng kết quả và chi phí (gpt-4o-mini: ~1.500 token/câu ≈ $0,0003).
+In ra SQL, giải thích từng bước, bảng kết quả và chi phí (gpt-4o-mini: ~1.500–2.000 token/câu ≈ $0,0004).
+`make prompt Q="..."` chỉ in ra đúng những gì model sẽ đọc (không gọi LLM, $0).
 Schema đưa cho model lấy từ `INFORMATION_SCHEMA` của MART, kèm mô tả cột do dbt ghi vào Snowflake
 (`persist_docs`). SQL chạy bằng role `FINSIGHT_AGENT` (chỉ SELECT được MART), timeout 30 giây, tối đa 100 dòng.
 
@@ -175,6 +178,21 @@ chặn mọi thứ không phải một câu SELECT (DML/DDL/GRANT/USE/CALL, lệ
 chỉ cho đọc bảng có trong metadata MART (tên đầy đủ `FINSIGHT.MART.<bảng>`), không `SELECT *`, không table
 function, không `SYSTEM$`, rồi thêm/giảm LIMIT về tối đa 100. SQL được chạy là bản guard in lại từ cây đã
 kiểm tra (bỏ comment). Câu bị chặn không chạm tới Snowflake và trả về mã lỗi (`violations`) cho repair loop.
+
+### Semantic layer
+
+Mô tả **cột** nằm trong dbt (`_marts.yml` → COMMENT trong Snowflake → schema trong prompt).
+[semantic/](semantic/) chứa kiến thức **không nằm trong một cột nào**:
+
+- [glossary.yml](semantic/glossary.yml): `coverage` (4 tài sản, 2 chuỗi vĩ mô, thứ KHÔNG có trong dữ liệu) —
+  luôn có trong prompt; `terms` (giá đóng cửa, lãi suất Fed, lợi suất 10 năm, so với hôm trước).
+- [metrics.yml](semantic/metrics.yml): công thức + từ đồng nghĩa + bẫy (volatility của một giai đoạn, lợi nhuận
+  cả kỳ, trung bình động, khối lượng...).
+- [verified_queries.yml](semantic/verified_queries.yml): SQL mẫu đã chạy thật (thay few-shot cố định).
+
+[retriever.py](src/semantic/retriever.py) chọn định nghĩa có từ đồng nghĩa xuất hiện trong câu hỏi (bỏ dấu,
+cụm từ liền nhau) và tối đa 2 ví dụ chia sẻ ≥ một nửa khái niệm với câu hỏi. File YAML được kiểm tra khi
+đọc (pydantic, key sai là lỗi); `tests/integration/test_semantic_layer.py` kiểm tra chúng khớp dữ liệu thật.
 
 ### Đánh giá (execution accuracy)
 
@@ -192,6 +210,8 @@ Baseline (2026-09-28, gpt-4o-mini, chưa có SQL guard / semantic layer / repair
 Sai: q04 (lọc trước window), q10 (sai định nghĩa volatility + lọc trước LAG), q11 (bịa mã TSLAUSDT).
 Sau SQL guard (regrade cùng SQL đó): vẫn 8/11, không câu nào bị chặn — guard giới hạn thiệt hại, không
 sửa lỗi nghĩa. `tests/integration/test_sql_guard_gold.py` kiểm tra guard không đổi đáp án của SQL gold.
+Sau semantic layer (2026-09-28): **10/11 = 91%**, $0,0039 — q04, q11 đúng; q10 vẫn sai (lọc trước LAG).
+Lưu ý: semantic layer được chỉnh sau khi nhìn 11 câu này, nên con số lạc quan; bộ 30 câu (Bài 14) mới đo thật.
 
 ## Lệnh
 
@@ -206,6 +226,7 @@ make load-fred        # nạp incremental FRED → RAW
 make dbt-build        # dbt: tạo model + chạy data test
 make airflow-up       # Airflow: pipeline tự chạy hằng ngày (UI :8081)
 make ask Q="..."      # hỏi dữ liệu bằng ngôn ngữ tự nhiên
+make prompt Q="..."   # xem prompt model sẽ đọc, không gọi LLM
 ```
 
 ## Cấu trúc
@@ -215,7 +236,9 @@ src/common/        config, logging, exception dùng chung
 src/services/      adapter ra bên ngoài: Snowflake, LLM, SQL guard
 src/ingestion/     lấy dữ liệu nguồn (Binance, FRED) và nạp vào RAW; phần dùng chung: retrying_http,
                    merge_loader
-src/agents/        LangGraph workflow (skeleton)
+src/agents/        vòng Text-to-SQL; LangGraph workflow (skeleton)
+src/semantic/      đọc semantic/*.yml và chọn ngữ cảnh cho từng câu hỏi
+semantic/          semantic layer: metric, glossary, SQL mẫu (dữ liệu, viết tay)
 src/api/           FastAPI routes
 infra/snowflake/   SQL dựng warehouse, database, schema, role, user
 dbt/               dự án dbt: RAW → STAGING → CORE → MART, kèm data test

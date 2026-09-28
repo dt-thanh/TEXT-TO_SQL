@@ -17,7 +17,7 @@ import json
 import logging
 import sys
 from collections import defaultdict
-from dataclasses import asdict, dataclass, fields
+from dataclasses import asdict, dataclass, field, fields
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -51,6 +51,7 @@ class QuestionResult:
     output_tokens: int = 0
     cost_usd: float = 0.0
     llm_seconds: float = 0.0
+    retrieved: list[str] = field(default_factory=list)  # semantic concepts/examples shown
 
     @property
     def passed(self) -> bool:
@@ -74,7 +75,8 @@ def evaluate(gold: dict[str, Any], llm: LLMClient, warehouse: Any) -> QuestionRe
         return QuestionResult(**base, status="llm_error", reason=str(err), generated_sql="")
 
     spent = {"input_tokens": answer.usage.input_tokens, "output_tokens": answer.usage.output_tokens,
-             "cost_usd": answer.usage.cost_usd, "llm_seconds": answer.llm_seconds}  # fmt: skip
+             "cost_usd": answer.usage.cost_usd, "llm_seconds": answer.llm_seconds,
+             "retrieved": list(answer.retrieved)}  # fmt: skip
     result = {**base, **spent, "generated_sql": answer.sql}
 
     if gold["expected_sql"] is None:  # the right answer is "this data cannot answer that"
@@ -125,7 +127,9 @@ def regrade(report_file: Path, golds: list[dict[str, Any]], warehouse: Any) -> l
     saved = json.loads(report_file.read_text(encoding="utf-8"))["results"]
     results = []
     for old in saved:
-        result = QuestionResult(**{f.name: old[f.name] for f in fields(QuestionResult)})
+        # Reports written before a field existed simply lack it: keep its default.
+        saved_fields = {f.name: old[f.name] for f in fields(QuestionResult) if f.name in old}
+        result = QuestionResult(**saved_fields)
         gold = gold_by_id.get(result.question_id)
         if gold and gold["expected_sql"] and result.status in ("pass", "wrong_result", "blocked"):
             checked = guard.validate_and_rewrite(result.generated_sql)

@@ -61,17 +61,31 @@ def test_the_tables_in_the_metadata_are_the_allowlist() -> None:
 
 
 def test_user_prompt_carries_today_so_last_month_can_be_resolved() -> None:
-    prompt = build_user_prompt("Last month?", "SCHEMA TEXT", date(2026, 9, 28))
+    prompt = build_user_prompt("Last month?", "SCHEMA TEXT", date(2026, 9, 28), "SEMANTIC TEXT")
 
     assert prompt.startswith("Today (UTC): 2026-09-28")
-    assert "SCHEMA TEXT" in prompt and prompt.endswith("Last month?")
+    assert prompt.index("SCHEMA TEXT") < prompt.index("SEMANTIC TEXT") < prompt.index("Last month?")
+    assert prompt.endswith("Last month?")  # the question comes last
 
 
-def test_system_prompt_includes_rules_and_verified_examples() -> None:
+def test_system_prompt_holds_only_rules_that_apply_to_every_question() -> None:
     text = system_prompt()
 
     assert "never SELECT *" in text
-    assert "FINSIGHT.MART.MART_MARKET_MACRO_DAILY" in text  # from the few-shot examples
+    assert "Available data" in text  # it tells the model what the user message contains
+    assert "BTCUSDT" not in text  # data knowledge lives in semantic/, not in the rules
+
+
+def test_the_prompt_carries_the_definitions_the_question_needs() -> None:
+    llm = FakeLLM("SELECT 1 AS n")
+
+    question = "Độ biến động quy ra năm của ETH?"
+
+    answer = answer_question(question, llm=llm, warehouse=FakeWarehouse([]))
+
+    assert "STDDEV_SAMP(log_return) * SQRT(365)" in llm.prompts[0]
+    assert "BTCUSDT: Bitcoin" in llm.prompts[0]  # coverage is always there
+    assert "annualized_volatility" in answer.retrieved
 
 
 def test_the_guards_rewrite_is_what_runs_and_what_is_shown() -> None:

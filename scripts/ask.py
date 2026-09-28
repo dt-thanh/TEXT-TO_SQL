@@ -3,13 +3,14 @@
 Run from the repository root:
     python -m scripts.ask "BTC biến động thế nào khi lợi suất 10 năm trên 4%?"
     make ask Q="Which asset had the highest 30-day volatility yesterday?"
+    make prompt Q="..."     # only print what the model would read: no LLM call, $0
 Prints the SQL, how it works, the result table, and what the LLM call cost.
 """
 
 import logging
 import sys
 
-from src.agents.text_to_sql import answer_question
+from src.agents.text_to_sql import agent_warehouse, answer_question, prepare_prompt, system_prompt
 from src.common.config import get_settings
 from src.common.exceptions import FinSightError
 from src.common.logging_config import setup_logging
@@ -32,15 +33,30 @@ def format_table(rows: list[dict[str, object]], limit: int = SHOWN_ROWS) -> str:
     return "\n".join(lines)
 
 
+def print_prompt(question: str) -> None:
+    """Show exactly what the model would read for this question, without calling it."""
+
+    prompt = prepare_prompt(question, agent_warehouse())
+    print(f"=== SYSTEM ===\n{system_prompt()}\n=== USER ===\n{prompt.user}\n")
+    characters = len(system_prompt()) + len(prompt.user)
+    print(f"RETRIEVED  {', '.join(prompt.retrieved) or '(no concept matched)'}")
+    print(f"SIZE       {characters} characters, roughly {characters // 4} input tokens")
+
+
 def main(argv: list[str] | None = None) -> int:
     args = sys.argv[1:] if argv is None else argv
+    only_prompt = bool(args) and args[0] == "--prompt"
+    args = args[1:] if only_prompt else args
     if not args or not " ".join(args).strip():
-        print('Usage: python -m scripts.ask "your question"')
+        print('Usage: python -m scripts.ask [--prompt] "your question"')
         return 2
     question = " ".join(args).strip()
 
     setup_logging(get_settings().log_level)
     try:
+        if only_prompt:
+            print_prompt(question)
+            return 0
         answer = answer_question(question)
     except FinSightError as err:
         logger.error("Could not answer: %s", err)

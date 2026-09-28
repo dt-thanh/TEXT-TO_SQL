@@ -1,0 +1,92 @@
+# Verified queries (spec §24 "verified SQL examples"): question → SQL pairs a human checked on the
+# real MART tables. They replace the fixed few-shot examples of lesson 9: now only the examples
+# that share a concept with the question are shown (at most 2), so each question gets the
+# patterns it needs without paying for the others.
+#
+# Rules for adding one:
+# - run the SQL as the agent user and check the numbers by hand;
+#   tests/integration/test_semantic_layer.py runs every query through the guard and Snowflake;
+# - `concepts` lists the metric/term ids the example demonstrates (not assets or dates);
+# - never copy a benchmark question (eval/gold_questions.jsonl): a test checks it.
+
+verified_queries:
+  - id: btc_average_close_month
+    question: What was Bitcoin's average closing price in August 2025?
+    concepts: [close_price]
+    sql: |
+      SELECT AVG(close_price) AS avg_close_price
+      FROM FINSIGHT.MART.MART_ASSET_DAILY
+      WHERE symbol = 'BTCUSDT'
+        AND trade_date BETWEEN '2025-08-01' AND '2025-08-31'
+    explanation: |
+      1. Keep Bitcoin (BTCUSDT) days in August 2025.
+      2. Average their daily closing prices.
+
+  - id: eth_risk_when_10y_above_4
+    question: ETH biến động thế nào vào những ngày lợi suất trái phiếu 10 năm trên 4%?
+    concepts: [treasury_10y, daily_return, annualized_volatility]
+    sql: |
+      SELECT
+          COUNT(*) AS days,
+          AVG(daily_return) AS avg_daily_return,
+          STDDEV_SAMP(log_return) * SQRT(365) AS annualized_volatility
+      FROM FINSIGHT.MART.MART_MARKET_MACRO_DAILY
+      WHERE symbol = 'ETHUSDT'
+        AND treasury_10y > 4
+        AND daily_return IS NOT NULL
+    explanation: |
+      1. Lấy các ngày của Ethereum (ETHUSDT) mà lợi suất 10 năm đã biết hôm đó trên 4%.
+      2. Đếm số ngày và tính lợi nhuận trung bình mỗi ngày.
+      3. Tính độ biến động quy ra năm: độ lệch chuẩn của log return nhân căn 365.
+
+  - id: eth_moving_average_given_week
+    question: What was Ethereum's 30-day moving average close on each day from 2026-08-25 to 2026-08-31?
+    concepts: [moving_average, close_price]
+    sql: |
+      WITH moving AS (
+          SELECT trade_date,
+                 AVG(close_price) OVER (ORDER BY trade_date
+                                        ROWS BETWEEN 29 PRECEDING AND CURRENT ROW) AS ma_30d
+          FROM FINSIGHT.MART.MART_ASSET_DAILY
+          WHERE symbol = 'ETHUSDT'
+      )
+      SELECT trade_date, ma_30d
+      FROM moving
+      WHERE trade_date BETWEEN '2026-08-25' AND '2026-08-31'
+      ORDER BY trade_date
+    explanation: |
+      1. Compute the 30-day moving average over Ethereum's whole history, so the first day
+         asked for still sees its 29 earlier days.
+      2. Only then keep 2026-08-25 to 2026-08-31.
+
+  - id: btc_return_when_fed_rate_fell
+    question: Trong năm 2024, lợi nhuận trung bình mỗi ngày của BTC vào những ngày lãi suất Fed giảm so với hôm trước là bao nhiêu?
+    concepts: [previous_day_change, fed_funds_rate, daily_return]
+    sql: |
+      WITH daily AS (
+          SELECT trade_date, daily_return, fed_funds_rate,
+                 LAG(fed_funds_rate) OVER (ORDER BY trade_date) AS previous_fed_funds_rate
+          FROM FINSIGHT.MART.MART_MARKET_MACRO_DAILY
+          WHERE symbol = 'BTCUSDT'
+      )
+      SELECT COUNT(*) AS days, AVG(daily_return) AS avg_daily_return
+      FROM daily
+      WHERE trade_date BETWEEN '2024-01-01' AND '2024-12-31'
+        AND fed_funds_rate < previous_fed_funds_rate
+    explanation: |
+      1. Với Bitcoin, lấy lãi suất Fed của ngày hôm trước bằng LAG trên toàn bộ lịch sử.
+      2. Sau đó mới giữ các ngày năm 2024 có lãi suất thấp hơn hôm trước.
+      3. Đếm số ngày và tính lợi nhuận trung bình mỗi ngày.
+
+  - id: sol_return_first_half
+    question: How much did Solana gain over the first half of 2025, in percent?
+    concepts: [period_return]
+    sql: |
+      SELECT (EXP(SUM(log_return)) - 1) * 100 AS return_pct
+      FROM FINSIGHT.MART.MART_ASSET_DAILY
+      WHERE symbol = 'SOLUSDT'
+        AND trade_date BETWEEN '2025-01-01' AND '2025-06-30'
+    explanation: |
+      1. Keep Solana days from 2025-01-01 to 2025-06-30.
+      2. Add up their log returns and turn the sum back into a return: EXP(sum) - 1.
+      3. Multiply by 100 to show percent.

@@ -1,0 +1,85 @@
+# Business glossary (spec §24): what the data covers, and the analysts' words for its columns.
+#
+# `coverage` is small and needed by every question (which symbol is "Bitcoin"? is this asset in
+# the data at all?), so it is ALWAYS in the prompt. `terms` are shown only when the question
+# uses one of their synonyms, like metrics.yml.
+#
+# Keep `assets` equal to the symbols in MART: tests/integration/test_semantic_layer.py checks it.
+
+coverage:
+  assets:
+    - symbol: BTCUSDT
+      name: Bitcoin
+      synonyms: [bitcoin, btc]
+    - symbol: ETHUSDT
+      name: Ethereum
+      synonyms: [ethereum, eth, ether]
+    - symbol: SOLUSDT
+      name: Solana
+      synonyms: [solana, sol]
+    - symbol: BNBUSDT
+      name: BNB
+      synonyms: [bnb, binance coin]
+  macro_series:
+    - column: fed_funds_rate
+      name: Federal Funds Effective Rate (FRED DFF), percent
+    - column: treasury_10y
+      name: 10-year US Treasury yield (FRED DGS10), percent
+  not_covered: >
+    Stocks and shares, stock indexes, other crypto coins, forex, commodities, inflation (CPI),
+    unemployment, news and on-chain data.
+
+terms:
+  - id: close_price
+    name: Closing price
+    synonyms: [closing price, close price, close, giá đóng cửa, đóng cửa]
+    definition: >
+      close_price, in USDT: the close of the day's last hourly candle (UTC day). "Price" of a
+      day means close_price unless the question says open, high or low.
+
+  - id: fed_funds_rate
+    name: Fed Funds rate
+    synonyms:
+      - fed funds
+      - fed rate
+      - federal funds
+      - interest rate
+      - lãi suất fed
+      - lãi suất điều hành
+      - lãi suất liên bang
+    definition: >
+      fed_funds_rate, in percent (5.33 = 5.33%), as known on that day. In MART_MACRO_DAILY
+      (by market_date) and MART_MARKET_MACRO_DAILY (by trade_date, next to each asset).
+
+  - id: treasury_10y
+    name: 10-year Treasury yield
+    synonyms:
+      - 10-year
+      - 10 year
+      - 10y
+      - treasury
+      - bond yield
+      - lợi suất 10 năm
+      - lợi suất trái phiếu
+      - trái phiếu 10 năm
+    definition: >
+      treasury_10y, in percent (4.5 = 4.5%), as known on that day. No new value on weekends
+      and US holidays: the last published value is carried forward.
+
+  - id: previous_day_change
+    name: Change from the previous day
+    synonyms:
+      - previous day
+      - day before
+      - prior day
+      - day over day
+      - hôm trước
+      - ngày trước đó
+      - so với hôm qua
+    sql: x - LAG(x) OVER (PARTITION BY symbol ORDER BY trade_date)
+    definition: >
+      Compare a value with the same asset's value one day earlier using LAG. "Rose" means
+      x > LAG(x); "fell" means x < LAG(x).
+    pitfalls: >
+      LAG needs the day before the first day asked for. Compute it in a CTE over the whole
+      history, then filter the dates in the outer query.

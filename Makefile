@@ -9,7 +9,7 @@ AIRFLOW := AIRFLOW_UID=$$(id -u) docker compose -f airflow/docker-compose.yml
 
 .PHONY: install run test test-unit lint check-snowflake load-binance load-fred \
 	dbt-deps dbt-build dbt-docs airflow-up airflow-down airflow-check airflow-logs ask \
-	eval eval-gold
+	prompt eval eval-gold
 
 install:
 	$(PY) -m pip install -r requirements.txt
@@ -63,6 +63,10 @@ airflow-logs:
 # Ask a question in plain language: make ask Q="BTC biến động thế nào tuần trước?"
 ask:
 	$(PY) -m scripts.ask "$(Q)"
+
+# Print what the model would read for Q (schema + semantic context): no LLM call, no cost.
+prompt:
+	$(PY) -m scripts.ask --prompt "$(Q)"
 
 # Benchmark the agent (execution accuracy). ~1 LLM call per question, see eval/run_eval.py.
 eval:

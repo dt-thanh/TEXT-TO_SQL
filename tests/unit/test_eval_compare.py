@@ -6,6 +6,7 @@ from decimal import Decimal
 from pathlib import Path
 
 from src.evaluation.compare import results_match
+from src.semantic.layer import load_semantic_layer
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -79,11 +80,11 @@ def test_values_must_sit_on_the_same_rows() -> None:
     assert not results_match(expected, swapped).matched
 
 
-def test_gold_file_is_well_formed_and_does_not_leak_few_shot_examples() -> None:
+def test_gold_file_is_well_formed_and_does_not_leak_verified_examples() -> None:
     gold_lines = (ROOT / "eval" / "gold_questions.jsonl").read_text(encoding="utf-8").splitlines()
     gold = [json.loads(line) for line in gold_lines]
-    examples = json.loads((ROOT / "prompts" / "few_shot_examples.json").read_text(encoding="utf-8"))
-    few_shot_questions = {ex["question"].strip().lower() for ex in examples["examples"]}
+    examples = load_semantic_layer().verified_queries
+    few_shot_questions = {ex.question.strip().lower() for ex in examples}
 
     ids = [g["question_id"] for g in gold]
     assert len(ids) == len(set(ids)), "question_id must be unique"
