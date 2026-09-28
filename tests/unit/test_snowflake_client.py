@@ -37,6 +37,9 @@ class FakeCursor:
     def fetchall(self) -> list[dict[str, Any]]:
         return self.rows
 
+    def fetchmany(self, size: int) -> list[dict[str, Any]]:
+        return self.rows[:size]
+
 
 class FakeConnection:
     """Stands in for a SnowflakeConnection and remembers whether it was closed."""
@@ -134,3 +137,26 @@ def test_execute_wraps_query_errors(monkeypatch: pytest.MonkeyPatch, settings: S
         SnowflakeClient(settings).execute("SELECT nope")
 
     assert connection.closed is True
+
+
+def test_execute_can_stop_after_max_rows(
+    monkeypatch: pytest.MonkeyPatch, settings: Settings
+) -> None:
+    cursor = FakeCursor(rows=[{"N": i} for i in range(5)])
+    monkeypatch.setattr(snowflake.connector, "connect", lambda **kw: FakeConnection(cursor))
+
+    assert SnowflakeClient(settings).execute("SELECT n", max_rows=2) == [{"N": 0}, {"N": 1}]
+
+
+def test_statement_timeout_and_query_tag_become_session_parameters(
+    monkeypatch: pytest.MonkeyPatch, settings: Settings
+) -> None:
+    captured: dict[str, Any] = {}
+    monkeypatch.setattr(snowflake.connector, "connect", lambda **kw: captured.update(kw))
+
+    SnowflakeClient(settings, query_tag="finsight_agent", statement_timeout_seconds=30).connect()
+
+    assert captured["session_parameters"] == {
+        "QUERY_TAG": "finsight_agent",
+        "STATEMENT_TIMEOUT_IN_SECONDS": 30,
+    }

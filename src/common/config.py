@@ -21,6 +21,12 @@ class Settings(BaseSettings):
     snowflake_private_key_path: Path | None = None
     snowflake_private_key_passphrase: SecretStr | None = None
 
+    # The Text-to-SQL agent connects as its own user with the read-only FINSIGHT_AGENT role,
+    # so LLM-written SQL can only ever SELECT from MART (infra/snowflake/02_agent_user.sql).
+    snowflake_agent_user: str = ""
+    snowflake_agent_role: str = "FINSIGHT_AGENT"
+    snowflake_agent_private_key_path: Path | None = None
+
     binance_base_url: str = "https://api.binance.com"
 
     fred_api_key: SecretStr = SecretStr("")
@@ -29,6 +35,10 @@ class Settings(BaseSettings):
     openai_api_key: SecretStr = SecretStr("")
     anthropic_api_key: SecretStr = SecretStr("")
     llm_model: str = "gpt-4.1-mini"
+    # USD per 1M tokens, only used to log what each question cost. Defaults are gpt-4o-mini's
+    # standard prices (developers.openai.com/api/docs/pricing, Sep 2026); update if you switch.
+    llm_input_usd_per_1m: float = 0.15
+    llm_output_usd_per_1m: float = 0.60
 
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
 
@@ -51,6 +61,25 @@ class Settings(BaseSettings):
             raise ConfigError(
                 f"SNOWFLAKE_PRIVATE_KEY_PATH does not exist: {self.snowflake_private_key_path}"
             )
+
+    def for_agent(self) -> "Settings":
+        """The same settings, but connecting as the read-only Text-to-SQL agent user."""
+
+        missing = [
+            name.upper()
+            for name in ("snowflake_agent_user", "snowflake_agent_private_key_path")
+            if not getattr(self, name)
+        ]
+        if missing:
+            raise ConfigError(f"Missing agent Snowflake settings in .env: {', '.join(missing)}")
+        return self.model_copy(
+            update={
+                "snowflake_user": self.snowflake_agent_user,
+                "snowflake_role": self.snowflake_agent_role,
+                "snowflake_private_key_path": self.snowflake_agent_private_key_path,
+                "snowflake_private_key_passphrase": None,
+            }
+        )
 
 
 @lru_cache

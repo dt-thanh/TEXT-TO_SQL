@@ -16,7 +16,8 @@ chạy và **hiển thị SQL** cùng kết quả.
 - Phase 3: dbt — STAGING (3 view), CORE (star schema, `fct_crypto_kline_1h` incremental) và MART
   (`mart_asset_daily`, `mart_macro_daily` point-in-time, `mart_market_macro_daily`), 69 data test.
 - Phase 3b: Airflow (Docker) chạy toàn bộ pipeline mỗi ngày lúc 00:30 UTC.
-- `/ask` và LangGraph vẫn là skeleton; UI chưa có.
+- Phase 4: Text-to-SQL tối giản — câu hỏi → schema MART (từ metadata Snowflake) → OpenAI → SQL → chạy bằng
+  user chỉ-đọc `FINSIGHT_AGENT_SVC`. Chưa có SQL guard, repair loop, UI.
 
 ## Cài đặt
 
@@ -151,6 +152,22 @@ DAG `finsight_daily` ([finsight_daily.py](airflow/dags/finsight_daily.py)), 00:3
 Mỗi task gọi lại đúng lệnh chạy tay (script Python, dbt) trong virtualenv riêng `/opt/finsight-venv` của image;
 Airflow chỉ lo lịch, thứ tự, thử lại (2 lần, cách 5 phút) và không cho hai lần chạy chồng nhau.
 
+## Hỏi bằng ngôn ngữ tự nhiên (Text-to-SQL)
+
+1. Chạy [02_agent_user.sql](infra/snowflake/02_agent_user.sql) trong Snowsight, rồi gắn public key:
+   `grep -v "PUBLIC KEY" ~/.snowflake/finsight_agent_key.pub | tr -d '\n'` →
+   `ALTER USER FINSIGHT_AGENT_SVC SET RSA_PUBLIC_KEY = '...';`
+2. `.env`: `OPENAI_API_KEY`, `SNOWFLAKE_AGENT_PRIVATE_KEY_PATH` (xem `.env.example`).
+3. Hỏi:
+
+```bash
+make ask Q="BTC biến động thế nào khi lợi suất 10 năm trên 4%?"
+```
+
+In ra SQL, giải thích từng bước, bảng kết quả và chi phí (gpt-4o-mini: ~1.500 token/câu ≈ $0,0003).
+Schema đưa cho model lấy từ `INFORMATION_SCHEMA` của MART, kèm mô tả cột do dbt ghi vào Snowflake
+(`persist_docs`). SQL chạy bằng role `FINSIGHT_AGENT` (chỉ SELECT được MART), timeout 30 giây, tối đa 100 dòng.
+
 ## Lệnh
 
 ```bash
@@ -163,6 +180,7 @@ make load-binance     # nạp incremental Binance → RAW
 make load-fred        # nạp incremental FRED → RAW
 make dbt-build        # dbt: tạo model + chạy data test
 make airflow-up       # Airflow: pipeline tự chạy hằng ngày (UI :8081)
+make ask Q="..."      # hỏi dữ liệu bằng ngôn ngữ tự nhiên
 ```
 
 ## Cấu trúc

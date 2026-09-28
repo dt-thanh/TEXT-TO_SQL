@@ -16,8 +16,17 @@ logger = logging.getLogger(__name__)
 class SnowflakeClient:
     """Narrow Snowflake access layer shared by ingestion, scripts, and the agent."""
 
-    def __init__(self, settings: Settings | None = None) -> None:
+    def __init__(
+        self,
+        settings: Settings | None = None,
+        query_tag: str = "finsight",
+        statement_timeout_seconds: int | None = None,
+    ) -> None:
         self.settings = settings or get_settings()
+        self.session_parameters: dict[str, Any] = {"QUERY_TAG": query_tag}
+        if statement_timeout_seconds:
+            # Snowflake itself cancels any statement running longer than this.
+            self.session_parameters["STATEMENT_TIMEOUT_IN_SECONDS"] = statement_timeout_seconds
 
     def connect(self) -> Any:
         """Open a connection with key-pair auth."""
@@ -40,17 +49,25 @@ class SnowflakeClient:
                 database=s.snowflake_database,
                 private_key_file=str(s.snowflake_private_key_path),
                 private_key_file_pwd=passphrase.get_secret_value() if passphrase else None,
-                session_parameters={"QUERY_TAG": "finsight"},
+                session_parameters=self.session_parameters,
             )
         except SnowflakeDriverError as err:
             raise WarehouseError(f"Could not connect to Snowflake: {err}") from err
 
-    def execute(self, sql: str, params: dict[str, Any] | None = None) -> list[dict[str, Any]]:
-        """Run one statement and return rows as dicts keyed by UPPERCASE column name."""
+    def execute(
+        self,
+        sql: str,
+        params: dict[str, Any] | None = None,
+        max_rows: int | None = None,
+    ) -> list[dict[str, Any]]:
+        """Run one statement and return rows as dicts keyed by UPPERCASE column name.
+
+        max_rows stops reading after that many rows, whatever the query returns.
+        """
 
         with self.connect() as conn, conn.cursor(DictCursor) as cur:
             try:
                 cur.execute(sql, params)
-                return cur.fetchall()
+                return cur.fetchmany(max_rows) if max_rows else cur.fetchall()
             except SnowflakeDriverError as err:
                 raise WarehouseError(f"Query failed: {err}") from err

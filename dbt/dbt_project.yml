@@ -30,3 +30,8 @@ models:
     marts:
       +schema: mart
       +materialized: table
+      # Write the descriptions from _marts.yml into Snowflake as table/column COMMENTs.
+      # The Text-to-SQL agent reads them from INFORMATION_SCHEMA to learn what each column means.
+      +persist_docs:
+        relation: true
+        columns: true

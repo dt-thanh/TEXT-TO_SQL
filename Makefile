@@ -8,7 +8,7 @@ DBT := set -a && . ./.env && set +a && cd dbt && ../.venv/bin/dbt
 AIRFLOW := AIRFLOW_UID=$$(id -u) docker compose -f airflow/docker-compose.yml
 
 .PHONY: install run test test-unit lint check-snowflake load-binance load-fred \
-	dbt-deps dbt-build dbt-docs airflow-up airflow-down airflow-check airflow-logs
+	dbt-deps dbt-build dbt-docs airflow-up airflow-down airflow-check airflow-logs ask
 
 install:
 	$(PY) -m pip install -r requirements.txt
@@ -58,3 +58,7 @@ airflow-check:
 
 airflow-logs:
 	$(AIRFLOW) logs -f --tail 100 airflow-scheduler
+
+# Ask a question in plain language: make ask Q="BTC biến động thế nào tuần trước?"
+ask:
+	$(PY) -m scripts.ask "$(Q)"

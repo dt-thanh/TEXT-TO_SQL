@@ -15,3 +15,7 @@ class WarehouseError(FinSightError):
 
 class SourceAPIError(FinSightError):
     """An external data source (Binance, FRED) failed or returned unusable data."""
+
+
+class LLMError(FinSightError):
+    """The language model call failed or returned something unusable."""
