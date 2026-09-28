@@ -7,6 +7,12 @@ profile: finsight
 model-paths: ["models"]
 macro-paths: ["macros"]
 test-paths: ["tests"]
+seed-paths: ["seeds"]
+
+# Reference CSVs (dbt/seeds/) are loaded next to the staging views.
+seeds:
+  finsight:
+    +schema: staging
 
 models:
   finsight:
@@ -14,3 +20,8 @@ models:
     staging:
       +schema: staging
       +materialized: view
+    # Spec §10: reusable facts and dimensions. Tables, because every mart reads them repeatedly.
+    # A model can override this (fct_crypto_kline_1h is incremental).
+    core:
+      +schema: core
+      +materialized: table

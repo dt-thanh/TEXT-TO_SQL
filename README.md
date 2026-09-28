@@ -13,8 +13,9 @@ chạy và **hiển thị SQL** cùng kết quả.
   watermark cho 4 symbol MVP.
 - Phase 2: FRED (DFF, DGS10) → `RAW`: giữ mọi vintage (mỗi lần công bố/sửa là một dòng), incremental theo
   ngày công bố.
-- Phase 3 (đang làm): dbt — STAGING (`stg_binance_kline`, `stg_fred_observation`) + 22 data test.
-- `/ask` và LangGraph vẫn là skeleton; CORE, MART, UI chưa có.
+- Phase 3 (đang làm): dbt — STAGING (3 view) và CORE (`dim_date`, `dim_asset`, `dim_macro_indicator`,
+  `fct_crypto_kline_1h` incremental, `fct_macro_observation`), 48 data test.
+- `/ask` và LangGraph vẫn là skeleton; MART, UI chưa có.
 
 ## Cài đặt
 
@@ -116,12 +117,16 @@ Dự án dbt nằm trong [dbt/](dbt/). Makefile nạp `.env` rồi chạy dbt v�
 
 ```bash
 make dbt-deps    # một lần: cài dbt_utils
-make dbt-build   # tạo view STAGING và chạy toàn bộ data test
+make dbt-build   # nạp seed, tạo STAGING + CORE, chạy toàn bộ data test
+make dbt-build ARGS="--full-refresh"   # xây lại cả model incremental từ đầu
 make dbt-docs    # tài liệu + sơ đồ lineage tại http://localhost:8080
 ```
 
 - `stg_binance_kline`: UTC rõ ràng, `trade_date`, cờ `is_full_candle` (nến bị cắt ngắn khi sàn tạm dừng).
 - `stg_fred_observation`: tính `realtime_end` của mỗi vintage = ngày trước vintage kế tiếp.
+- Seed (`dbt/seeds/*.csv`): danh sách coin và chỉ số vĩ mô do người định nghĩa, review như code.
+- CORE theo star schema: fact = sự kiện (nến, giá trị vĩ mô), dimension = đối tượng (ngày, tài sản, chỉ số).
+  `fct_crypto_kline_1h` là incremental (chỉ MERGE dòng loader mới đổi, theo `loaded_at`).
 - Test cảnh báo (`warn`) cho điểm bất thường đã biết của nguồn; test lỗi (`error`) cho điều không được phép
   xảy ra, ví dụ khoảng trống dữ liệu > 12 giờ (dấu hiệu pipeline bỏ sót).
 

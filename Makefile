@@ -34,8 +34,9 @@ load-fred:
 dbt-deps:
 	$(DBT) deps
 
+# Extra dbt flags: make dbt-build ARGS="--full-refresh" or ARGS="--select fct_crypto_kline_1h"
 dbt-build:
-	$(DBT) build
+	$(DBT) build $(ARGS)
 
 dbt-docs:
 	$(DBT) docs generate

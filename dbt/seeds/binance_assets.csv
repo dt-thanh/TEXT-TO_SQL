@@ -1,0 +1,5 @@
+asset_id,symbol,base_asset,quote_asset,asset_name,asset_type,exchange,is_active
+BTC,BTCUSDT,BTC,USDT,Bitcoin,CRYPTO,BINANCE,true
+ETH,ETHUSDT,ETH,USDT,Ethereum,CRYPTO,BINANCE,true
+SOL,SOLUSDT,SOL,USDT,Solana,CRYPTO,BINANCE,true
+BNB,BNBUSDT,BNB,USDT,BNB,CRYPTO,BINANCE,true

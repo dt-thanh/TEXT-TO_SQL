@@ -1,0 +1,25 @@
+# Seeds: small reference lists that people decide, not an API. They live in git as CSV, so a
+# change (a new coin, a new indicator) is reviewed like code. `dbt build` loads them as tables.
+version: 2
+
+seeds:
+  - name: binance_assets
+    description: The asset universe FinSight tracks. Adding a row here is how a coin joins the MVP.
+    config:
+      column_types:
+        is_active: boolean
+    columns:
+      - name: asset_id
+        description: Short asset code, e.g. BTC.
+      - name: symbol
+        description: Binance trading pair, e.g. BTCUSDT. Must match RAW_BINANCE_KLINE.symbol.
+
+  - name: macro_indicators
+    description: >
+      Business names for the FRED series FinSight uses. Units and frequency are NOT repeated here:
+      DIM_MACRO_INDICATOR takes them from FRED's own metadata, the source of truth.
+    columns:
+      - name: indicator_id
+        description: Stable business id, e.g. TREASURY_10Y. Code and questions use this, not the FRED code.
+      - name: series_id
+        description: FRED series code, e.g. DGS10.

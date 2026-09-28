@@ -1,0 +1,104 @@
+# Documentation and tests for CORE (spec §10, §18). CORE is the reusable, clean domain layer:
+# facts (things that happened, many rows) and dimensions (the things they are about, few rows).
+version: 2
+
+models:
+  - name: dim_date
+    description: Every calendar day from 2018-12-01 to one year after today, weekends included.
+    data_tests:
+      - dbt_utils.expression_is_true:
+          name: dim_date_weekend_flag_matches_weekday
+          arguments:
+            expression: "is_weekend = (day_of_week >= 6)"
+    columns:
+      - name: date_day
+        description: The calendar day. Primary key.
+        data_tests:
+          - unique
+          - not_null
+          - dbt_utils.sequential_values:
+              arguments:
+                interval: 1
+                datepart: day
+
+  - name: dim_asset
+    description: The tracked crypto assets, one row per asset (from the binance_assets seed).
+    columns:
+      - name: asset_id
+        data_tests: [unique, not_null]
+      - name: symbol
+        description: Binance pair; the key facts use to point at this table.
+        data_tests: [unique, not_null]
+      - name: asset_type
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [CRYPTO]
+
+  - name: dim_macro_indicator
+    description: Macro indicators, one row each; business names from the seed, units from FRED.
+    columns:
+      - name: indicator_id
+        data_tests: [unique, not_null]
+      - name: series_id
+        data_tests:
+          - unique
+          - not_null
+          # Every indicator we name must be a series we actually load from FRED.
+          - relationships:
+              arguments:
+                to: ref('stg_fred_series')
+                field: series_id
+      - name: unit
+        description: From FRED metadata. NULL would mean the FRED series row is missing.
+        data_tests: [not_null]
+
+  - name: fct_crypto_kline_1h
+    description: One row per symbol + interval_code + open_time (UTC). Incremental.
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [symbol, interval_code, open_time]
+    columns:
+      - name: symbol
+        data_tests:
+          - not_null
+          # Spec §18: every symbol must exist in dim_asset.
+          - relationships:
+              arguments:
+                to: ref('dim_asset')
+                field: symbol
+      - name: trade_date
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_date')
+                field: date_day
+      - name: close_price
+        data_tests: [not_null]
+
+  - name: fct_macro_observation
+    description: >
+      One row per series_id + observation_date + realtime_start. The value was the latest known
+      value for observation_date from realtime_start through realtime_end.
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [series_id, observation_date, realtime_start]
+    columns:
+      - name: series_id
+        data_tests:
+          - not_null
+          # Spec §18: every series must exist in dim_macro_indicator.
+          - relationships:
+              arguments:
+                to: ref('dim_macro_indicator')
+                field: series_id
+      - name: observation_date
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_date')
+                field: date_day

@@ -31,12 +31,9 @@ models:
     columns:
       - name: symbol
         description: Binance trading pair, e.g. BTCUSDT.
+        # "Is this a symbol we track?" is tested in CORE against dim_asset (relationships).
         data_tests:
           - not_null
-          # Until CORE.DIM_ASSET exists (lesson 6), the MVP universe is listed here.
-          - accepted_values:
-              arguments:
-                values: [BTCUSDT, ETHUSDT, SOLUSDT, BNBUSDT]
       - name: interval_code
         description: Candle length. Only 1h in the MVP.
         data_tests:
@@ -57,6 +54,12 @@ models:
           - not_null
       - name: is_full_candle
         description: False when the candle closed early (exchange halt) or has an odd close_time.
+
+  - name: stg_fred_series
+    description: FRED's own description of each series (title, units, frequency). One row per series.
+    columns:
+      - name: series_id
+        data_tests: [unique, not_null]
 
   - name: stg_fred_observation
     description: >
@@ -81,11 +84,9 @@ models:
     columns:
       - name: series_id
         description: FRED series, e.g. DGS10 (10-year Treasury yield), DFF (Fed Funds rate).
+        # "Is this a series we track?" is tested in CORE against dim_macro_indicator.
         data_tests:
           - not_null
-          - accepted_values:
-              arguments:
-                values: [DFF, DGS10]
       - name: observation_date
         description: The day (or month) the value describes.
         data_tests:

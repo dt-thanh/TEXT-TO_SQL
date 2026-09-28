@@ -1,0 +1,3 @@
+indicator_id,series_id,indicator_name,category,description
+FED_FUNDS,DFF,Federal Funds Effective Rate,INTEREST_RATE,"Overnight rate at which US banks lend reserves to each other; the main rate the Federal Reserve steers. Published for every calendar day, weekends included."
+TREASURY_10Y,DGS10,10-Year Treasury Yield,INTEREST_RATE,"Market yield on 10-year US government bonds. Business days only; no value on bond-market holidays."
