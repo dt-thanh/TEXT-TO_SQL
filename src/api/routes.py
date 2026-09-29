@@ -40,21 +40,11 @@ def to_json_value(value: Any) -> Any:
     return value
 
 
-def status_of(answer: Answer) -> str:
-    if answer.violations:
-        return "blocked"
-    if answer.error:
-        return "failed"
-    if not answer.sql:
-        return "declined"
-    return "answered"
-
-
 def to_response(answer: Answer) -> AskResponse:
     chart = suggest_chart(answer.rows)  # on Snowflake's own types, before JSON conversion
     return AskResponse(
         question=answer.question,
-        status=status_of(answer),
+        status=answer.status,
         sql=answer.sql,
         explanation=answer.explanation,
         columns=list(answer.rows[0]) if answer.rows else [],

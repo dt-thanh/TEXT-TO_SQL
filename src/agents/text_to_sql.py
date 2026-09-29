@@ -7,6 +7,7 @@ and caps its rows (src/services/sql_guard.py), then the query runs as FINSIGHT_A
 can only SELECT from MART, with a timeout.
 """
 
+import logging
 import time
 from dataclasses import dataclass
 from datetime import date
@@ -18,6 +19,8 @@ from src.agents.state import AgentState, Attempt
 from src.common.config import get_settings
 from src.services.llm import LLMClient, LLMUsage
 from src.services.snowflake_client import SnowflakeClient
+
+logger = logging.getLogger(__name__)
 
 MAX_ROWS = 100
 STATEMENT_TIMEOUT_SECONDS = 30
@@ -42,6 +45,18 @@ class Answer:
     attempts: tuple[Attempt, ...] = ()  # every failed attempt, oldest first
     seconds: float = 0.0  # wall-clock time of the whole question, metadata lookup included
     data_as_of: date | None = None  # newest finished UTC day in the marts: answers stop there
+
+    @property
+    def status(self) -> str:
+        """How the question ended: answered, declined, blocked or failed."""
+
+        if self.violations:
+            return "blocked"  # the SQL guard refused the last SQL; nothing ran
+        if self.error:
+            return "failed"  # Snowflake rejected the last SQL after the allowed repairs
+        if not self.sql:
+            return "declined"  # the data cannot answer the question
+        return "answered"
 
 
 @lru_cache
@@ -99,4 +114,16 @@ def answer_question(
     graph = build_graph(llm, warehouse, max_rows=max_rows, max_repairs=max_repairs)
     started = time.perf_counter()
     state = graph.invoke({"question": question})
-    return to_answer(state, max_rows, seconds=time.perf_counter() - started)
+    answer = to_answer(state, max_rows, seconds=time.perf_counter() - started)
+    # One line per question: enough to follow cost, latency and quality from the logs.
+    logger.info(
+        "question status=%s repairs=%d rows=%d cost_usd=%.5f seconds=%.1f retrieved=%s text=%r",
+        answer.status,
+        answer.repairs,
+        len(answer.rows),
+        answer.usage.cost_usd,
+        answer.seconds,
+        ",".join(answer.retrieved) or "-",
+        question[:200],
+    )
+    return answer

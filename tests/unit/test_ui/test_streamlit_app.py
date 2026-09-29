@@ -85,6 +85,25 @@ def test_a_failed_query_shows_the_error_and_every_attempt(
     assert len(app.expander[0].code) == 3
 
 
+def test_one_click_is_one_paid_call_and_the_button_comes_back(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[str] = []
+
+    def fake_post(url: str, **kwargs: Any) -> httpx.Response:
+        calls.append(kwargs["json"]["question"])
+        return httpx.Response(200, json=BASE, request=httpx.Request("POST", url))
+
+    monkeypatch.setattr(httpx, "post", fake_post)
+    app = AppTest.from_file(APP, default_timeout=30).run()
+    app.text_area(key="question").input("Average daily return?").run()
+    app.button[0].click().run()
+
+    assert calls == ["Average daily return?"]
+    assert not app.button[0].disabled  # locked only while the call runs, then usable again
+    assert "pending" not in app.session_state
+
+
 def test_an_api_that_is_down_gives_a_hint_not_a_crash(monkeypatch: pytest.MonkeyPatch) -> None:
     app = run_app(monkeypatch, httpx.ConnectError("connection refused"))
 

@@ -66,6 +66,21 @@ def test_a_correct_first_attempt_needs_one_llm_call_and_no_repair() -> None:
     assert answer.seconds > 0  # the whole question is timed, not only the LLM and SQL parts
 
 
+def test_every_question_leaves_one_summary_line_in_the_log(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    # One line per question with status, repairs, cost and time is enough to follow cost and
+    # quality in production from the logs alone.
+    caplog.set_level("INFO", logger="src.agents.text_to_sql")
+
+    ask(ScriptedLLM(BAD_COLUMN_SQL, GOOD_SQL))
+
+    summaries = [r.getMessage() for r in caplog.records if r.getMessage().startswith("question ")]
+    assert len(summaries) == 1
+    assert "status=answered" in summaries[0] and "repairs=1" in summaries[0]
+    assert "cost_usd=0.00040" in summaries[0]
+
+
 def test_a_snowflake_compilation_error_is_sent_back_and_repaired() -> None:
     llm = ScriptedLLM(BAD_COLUMN_SQL, GOOD_SQL)
 

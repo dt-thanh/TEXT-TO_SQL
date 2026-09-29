@@ -43,6 +43,14 @@ def use_example() -> None:
         st.session_state.question = st.session_state.example
 
 
+def submit() -> None:
+    """Runs before the rerun that the click starts. While `pending` is set the Ask button is
+    drawn disabled, so impatient clicks cannot start more paid calls for the same question."""
+
+    if st.session_state.question.strip():
+        st.session_state.pending = st.session_state.question.strip()
+
+
 def show_answer(data: dict[str, Any]) -> None:
     status, rows = data["status"], data["rows"]
     if status == "declined":
@@ -111,17 +119,26 @@ st.caption(
 st.selectbox("Example questions", EXAMPLES, key="example", on_change=use_example)
 question = st.text_area("Your question", key="question", max_chars=500)
 
-if st.button("Ask", type="primary") and question.strip():
-    with st.spinner("Reading the schema, writing SQL, checking it and running it on Snowflake..."):
-        try:
-            # Kept in session_state: Streamlit reruns this whole script on every click.
-            st.session_state.answer = ask_api(question)
-        except httpx.HTTPStatusError as err:
-            st.session_state.pop("answer", None)
-            st.error(f"The API answered {err.response.status_code}: {err.response.text}")
-        except httpx.HTTPError:
-            st.session_state.pop("answer", None)
-            st.error(f"Cannot reach the API at {API_URL}. Is it running (make run)?")
+pending = st.session_state.get("pending")
+st.button("Ask", type="primary", on_click=submit, disabled=bool(pending))
 
+if pending:
+    # Results live in session_state: Streamlit reruns this whole script on every interaction.
+    with st.spinner("Reading the schema, writing SQL, checking it and running it on Snowflake..."):
+        st.session_state.pop("answer", None)
+        st.session_state.pop("problem", None)
+        try:
+            st.session_state.answer = ask_api(pending)
+        except httpx.HTTPStatusError as err:
+            st.session_state.problem = (
+                f"The API answered {err.response.status_code}: {err.response.text}"
+            )
+        except httpx.HTTPError:
+            st.session_state.problem = f"Cannot reach the API at {API_URL}. Is it up? (make run)"
+    del st.session_state.pending
+    st.rerun()  # draw the Ask button enabled again
+
+if "problem" in st.session_state:
+    st.error(st.session_state.problem)
 if "answer" in st.session_state:
     show(st.session_state.answer)
