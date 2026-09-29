@@ -156,7 +156,11 @@ make airflow-down    # tắt (metadata vẫn giữ trong volume Postgres)
 ```
 
 DAG `finsight_daily` ([finsight_daily.py](airflow/dags/finsight_daily.py)), 00:30 UTC mỗi ngày:
-`load_binance` + `load_fred` (song song) → `dbt_build_staging` → `dbt_build_core` → `dbt_build_marts`.
+`load_binance` + `load_fred` (song song) → `check_source_freshness` → `dbt_build_staging` → `dbt_build_core` →
+`dbt_build_marts`. `check_source_freshness` (`dbt source freshness`, ngưỡng trong
+[_sources.yml](dbt/models/staging/_sources.yml)) làm run đỏ khi nến Binance mới nhất cũ hơn 48 giờ hoặc FRED không có
+công bố mới trong 7 ngày; test `mart_is_up_to_date` đỏ khi MART thiếu ngày hôm qua. Dữ liệu cũ hiện thành lỗi trong
+Airflow, không thành câu trả lời lỗi thời.
 Mỗi task gọi lại đúng lệnh chạy tay (script Python, dbt) trong virtualenv riêng `/opt/finsight-venv` của image;
 Airflow chỉ lo lịch, thứ tự, thử lại (2 lần, cách 5 phút) và không cho hai lần chạy chồng nhau.
 
@@ -191,7 +195,8 @@ make ui     # terminal thứ hai, giao diện: http://localhost:8501
 make app-up # hoặc cả hai trong Docker (Docker Desktop phải đang chạy); make app-down để tắt
 ```
 
-`POST /ask {"question": "..."}` trả về `status` (`answered` / `declined` / `blocked` / `failed`), `sql`, `explanation`,
+`POST /ask {"question": "..."}` trả về `status` (`answered` / `declined` / `blocked` / `failed`), `data_as_of` (ngày
+mới nhất có dữ liệu), `total_seconds`, `sql`, `explanation`,
 `rows` (JSON thuần: Decimal → số, date → ISO), `chart` (chọn bằng luật trong
 [chart_service.py](src/services/chart_service.py), không gọi LLM), các lần sửa và chi phí. SQL bị chặn hay lỗi vẫn là
 câu trả lời (200); không gọi được OpenAI/Snowflake là 503 (chi tiết chỉ nằm trong log). Giao diện
@@ -253,6 +258,10 @@ Sau repair loop (2026-09-29): **10/11**, $0,0052 — 2 câu cần sửa (3 lần
 cùng một lỗi thiếu cột 3 lần.
 Có holdout (2026-09-29, 21 câu): **19/21**, $0,0087 — dev 9/11 [95% CI 52–95%], holdout 10/10 [72–100%]. Hai khoảng
 chồng nhau: chưa đủ câu để nói hai nhóm khác nhau. Cùng một prompt, q05 lúc đúng lúc sai (3 lần chạy lại: 1 sai, 2 đúng).
+Sau hardening (2026-09-29): độ trễ **thật** (cả câu hỏi) p50 2,4 s / p95 6,2 s — trước đó ~9–10 s vì mỗi câu đăng nhập
+Snowflake ~2,3 s ít nhất hai lần và đọc lại metadata; 100% SQL qua guard và chạy được; $0,00043/câu; 18/21 (dev 12/15,
+holdout 6/6 [61–100%]). A/B 3 lần chạy mỗi cấu hình cho thấy ba luật thêm vào system prompt làm holdout tụt từ 26/27
+xuống 20/27; đã gỡ (commit `ffc42ec`). q14, q15, q16, q18 chuyển sang dev vì đã được dùng để quyết định thay đổi.
 
 ## Lệnh
 
@@ -265,6 +274,7 @@ make check-snowflake  # kiểm tra kết nối Snowflake
 make load-binance     # nạp incremental Binance → RAW
 make load-fred        # nạp incremental FRED → RAW
 make dbt-build        # dbt: tạo model + chạy data test
+make dbt-freshness    # dữ liệu RAW có đủ mới không
 make airflow-up       # Airflow: pipeline tự chạy hằng ngày (UI :8081)
 make ui               # giao diện Streamlit (cần make run)
 make ask Q="..."      # hỏi dữ liệu bằng ngôn ngữ tự nhiên
