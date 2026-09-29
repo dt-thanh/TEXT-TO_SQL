@@ -251,6 +251,8 @@ Sau semantic layer (2026-09-28): **10/11 = 91%**, $0,0039 — q04, q11 đúng; q
 Lưu ý: semantic layer được chỉnh sau khi nhìn 11 câu này, nên con số lạc quan; bộ 30 câu (Bài 14) mới đo thật.
 Sau repair loop (2026-09-29): **10/11**, $0,0052 — 2 câu cần sửa (3 lần gọi sửa), q07 sửa thành công; q10 lặp lại
 cùng một lỗi thiếu cột 3 lần.
+Có holdout (2026-09-29, 21 câu): **19/21**, $0,0087 — dev 9/11 [95% CI 52–95%], holdout 10/10 [72–100%]. Hai khoảng
+chồng nhau: chưa đủ câu để nói hai nhóm khác nhau. Cùng một prompt, q05 lúc đúng lúc sai (3 lần chạy lại: 1 sai, 2 đúng).
 
 ## Lệnh
 
