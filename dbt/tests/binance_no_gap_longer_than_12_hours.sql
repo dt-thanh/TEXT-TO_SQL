@@ -2,7 +2,7 @@
 --
 -- Binance itself has short outages (about 60 missing hours since 2019, the longest 10 hours on
 -- 2019-05-15), so short gaps are normal. A longer gap almost certainly means OUR pipeline missed
--- data, like the 2020-2023 BTC hole created by an interrupted backfill in lesson 3.
+-- data, e.g. a backfill that was interrupted and never resumed.
 
 with ordered as (
 

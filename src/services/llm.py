@@ -1,7 +1,7 @@
 """Call the language model and get back JSON of a fixed shape, plus what the call cost.
 
-Only OpenAI is implemented (LLM_PROVIDER=openai). Callers never touch the OpenAI SDK directly,
-so switching provider later means changing this file only.
+OpenAI only. Callers never touch the OpenAI SDK directly, so switching provider later means
+changing this file only.
 """
 
 import json
@@ -42,8 +42,6 @@ class LLMClient:
 
     def __init__(self, settings: Settings | None = None, client: Any = None) -> None:
         self.settings = settings or get_settings()
-        if self.settings.llm_provider != "openai":
-            raise ConfigError("Only LLM_PROVIDER=openai is implemented")
         api_key = self.settings.openai_api_key.get_secret_value()
         if client is None and not api_key:
             raise ConfigError("Missing OPENAI_API_KEY in .env")
@@ -61,7 +59,7 @@ class LLMClient:
         """Ask the model for one JSON object that matches `json_schema` exactly.
 
         Structured Outputs (strict JSON schema) makes the API guarantee the shape, so there is
-        no fragile parsing of ```sql fences like in code/first_loop.py.
+        no fragile parsing of ```sql fences out of free text.
         """
 
         started = time.perf_counter()

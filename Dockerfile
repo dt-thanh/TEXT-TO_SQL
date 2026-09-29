@@ -1,4 +1,4 @@
-# Multi-stage Python 3.11 image. TODO: Add a non-root user and dependency scanning.
+# API and UI image (docker-compose.yml). Multi-stage: build the virtualenv, copy only it.
 FROM python:3.11-slim AS builder
 
 ENV PIP_DISABLE_PIP_VERSION_CHECK=1 \
@@ -20,8 +20,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 COPY --from=builder /opt/venv /opt/venv
-# Everything the API and the UI read at runtime. Forgetting one (semantic/ was missing before
-# lesson 13) only fails when the first question arrives, so the unit tests do not catch it.
+# Everything the API and the UI read at runtime. A missing folder only fails when the first
+# question arrives (unit tests run from the repository, where every file exists).
 COPY src ./src
 COPY prompts ./prompts
 COPY semantic ./semantic

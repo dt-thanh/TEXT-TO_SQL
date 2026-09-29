@@ -1,4 +1,4 @@
-"""Run the SQL guard (lesson 10) on the model's SQL. Nothing reaches Snowflake here."""
+"""Run the SQL guard (src/services/sql_guard.py) on the model's SQL. Nothing reaches Snowflake."""
 
 from typing import Any
 

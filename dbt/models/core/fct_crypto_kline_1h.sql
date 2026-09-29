@@ -3,7 +3,7 @@
     Grain: symbol + interval_code + open_time.
 
     Incremental: the first run builds the whole table; later runs only MERGE rows the loader
-    inserted or changed since the previous dbt run. It is lesson 2-3's watermark + MERGE,
+    inserted or changed since the previous dbt run. It is the loader's watermark + MERGE,
     written in SQL: {{ this }} is this table, and loaded_at is its watermark.
 -#}
 {{

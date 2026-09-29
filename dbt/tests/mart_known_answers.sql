@@ -1,8 +1,8 @@
--- Known-answer test: values checked by hand in earlier lessons must come out of the marts
+-- Known-answer test: values checked by hand against the source APIs must come out of the marts
 -- unchanged. Returns one row per check that is wrong OR missing (a missing row must not pass).
 --
---   BTC daily close 2024-01-01 = close of the 23:00 UTC candle (lesson 1): 44179.55
---   DGS10 known on Sun 2024-12-22 = Thu 12-19 value 4.57, published Fri 12-20 (lesson 4)
+--   BTC daily close 2024-01-01 = close of the 23:00 UTC candle: 44179.55
+--   DGS10 known on Sun 2024-12-22 = Thu 12-19 value 4.57, published Fri 12-20
 --   DGS10 known on Mon 2024-12-23 = Fri 12-20 value 4.52, published that Monday
 -- The last two are the point-in-time rule: Friday's yield is not known until Monday.
 

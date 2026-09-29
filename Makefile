@@ -12,7 +12,7 @@ AIRFLOW := AIRFLOW_UID=$$(id -u) docker compose -f airflow/docker-compose.yml
 	prompt eval eval-gold
 
 install:
-	$(PY) -m pip install -r requirements.txt
+	$(PY) -m pip install -r requirements-dev.txt
 
 # The API on http://localhost:8000 (docs: /docs). Restarts when code changes.
 run:

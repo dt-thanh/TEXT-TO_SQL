@@ -31,12 +31,10 @@ class Settings(BaseSettings):
 
     fred_api_key: SecretStr = SecretStr("")
 
-    llm_provider: Literal["openai", "anthropic"] = "openai"
     openai_api_key: SecretStr = SecretStr("")
-    anthropic_api_key: SecretStr = SecretStr("")
-    llm_model: str = "gpt-4.1-mini"
-    # USD per 1M tokens, only used to log what each question cost. Defaults are gpt-4o-mini's
-    # standard prices (developers.openai.com/api/docs/pricing, Sep 2026); update if you switch.
+    llm_model: str = "gpt-4o-mini"
+    # USD per 1M tokens, only used to report what each question cost. They must match llm_model:
+    # these are gpt-4o-mini's standard prices (developers.openai.com/api/docs/pricing, Sep 2026).
     llm_input_usd_per_1m: float = 0.15
     llm_output_usd_per_1m: float = 0.60
 

@@ -27,7 +27,7 @@ daily as (
         sum(base_volume)                as base_volume,
         sum(quote_volume)               as quote_volume,
         sum(trade_count)                as trade_count,
-        -- Exchange outages leave some days with fewer than 24 hourly candles (lesson 1).
+        -- Exchange outages leave some days with fewer than 24 hourly candles.
         count(*)                        as candle_count,
         count(*) = 24                   as is_complete_day
     from hourly

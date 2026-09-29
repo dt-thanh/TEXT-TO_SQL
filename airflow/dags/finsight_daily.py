@@ -39,7 +39,7 @@ with DAG(
     # The loaders find their own starting point from the watermark in RAW, so Airflow never
     # needs to replay missed days one by one: after downtime, a single run catches up.
     catchup=False,
-    # Two runs at once would load the same data twice in parallel (lesson 3). Never do that.
+    # Two runs at once would read the same watermark and load the same window twice in parallel.
     max_active_runs=1,
     default_args=default_args,
     tags=["finsight"],

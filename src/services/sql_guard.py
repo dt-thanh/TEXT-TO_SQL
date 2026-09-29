@@ -52,7 +52,7 @@ class SQLValidationResult:
     is_valid: bool
     sql: str | None = None
     error: str | None = None
-    # Stable codes such as "select_star", for tests, metrics and the repair prompt (lesson 12).
+    # Stable codes such as "select_star", for tests, metrics and the repair loop.
     violations: tuple[str, ...] = ()
     # True when the guard added or lowered the LIMIT: the row cap came from us, not the model.
     limit_enforced: bool = False

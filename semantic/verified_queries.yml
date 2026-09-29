@@ -1,5 +1,5 @@
 # Verified queries (spec §24 "verified SQL examples"): question → SQL pairs a human checked on the
-# real MART tables. They replace the fixed few-shot examples of lesson 9: now only the examples
+# real MART tables. Instead of fixed few-shot examples in every prompt, only the examples
 # that share a concept with the question are shown (at most 2), so each question gets the
 # patterns it needs without paying for the others.
 #

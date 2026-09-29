@@ -1,5 +1,5 @@
 # Documentation and tests for MART (spec §11). These descriptions are also what the Text-to-SQL
-# agent will read (lesson 11), so they say what each metric MEANS, not only its type.
+# agent reads (persist_docs → Snowflake COMMENTs), so they say what each metric MEANS.
 version: 2
 
 models:
@@ -110,7 +110,7 @@ models:
       - dbt_utils.unique_combination_of_columns:
           arguments:
             combination_of_columns: [trade_date, symbol]
-      # The join must not multiply rows (the fan-out trap from the first lesson).
+      # The join must not multiply rows (fan-out: one asset-day joined to several macro rows).
       - dbt_utils.equal_rowcount:
           arguments:
             compare_model: ref('mart_asset_daily')

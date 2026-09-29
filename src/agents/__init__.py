@@ -1,4 +1,1 @@
-"""LangGraph agent orchestration package.
-
-TODO: Export the production graph after dependency injection is finalized.
-"""
+"""The Text-to-SQL agent: prompt building, the LangGraph workflow and its nodes."""

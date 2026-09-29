@@ -232,7 +232,7 @@ def test_empty_or_broken_sql_is_rejected(sql: str, code: str) -> None:
 
 
 def test_every_violation_is_reported_at_once() -> None:
-    # The repair loop (lesson 12) can then fix everything in one retry instead of one per retry.
+    # The repair loop can then fix everything in one retry instead of one per retry.
     result = GUARD.validate_and_rewrite("SELECT * FROM FINSIGHT.RAW.RAW_BINANCE_KLINE")
 
     assert set(result.violations) == {"select_star", "table_not_allowed"}

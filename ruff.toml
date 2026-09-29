@@ -1,7 +1,7 @@
-# Ruff configuration. TODO: Tighten rule selection as the implementation matures.
+# Lint rules: pycodestyle, pyflakes, import order, pyupgrade, bugbear.
 target-version = "py311"
 line-length = 100
-extend-exclude = ["data/generated", "eval/results"]
+extend-exclude = ["eval/results"]
 
 [lint]
 select = ["E", "F", "I", "UP", "B"]

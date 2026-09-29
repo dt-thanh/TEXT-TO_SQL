@@ -1,6 +1,6 @@
 -- One row per calendar day, weekends included: crypto trades every day (spec §10.3).
 -- Starts at the FRED warm-up month (2018-12-01) and runs a year past today, so every trade_date
--- and observation_date in the warehouse has a row. MART_MACRO_DAILY (lesson 7) starts from this
+-- and observation_date in the warehouse has a row. MART_MACRO_DAILY starts from this
 -- table so that Saturdays and Sundays get a macro value even though bond markets are closed.
 
 with days as (
