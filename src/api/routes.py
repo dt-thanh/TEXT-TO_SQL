@@ -69,6 +69,7 @@ def to_response(answer: Answer) -> AskResponse:
         usage=asdict(answer.usage),
         llm_seconds=answer.llm_seconds,
         sql_seconds=answer.sql_seconds,
+        total_seconds=answer.seconds,
     )
 
 

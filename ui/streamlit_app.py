@@ -77,7 +77,8 @@ def show_details(data: dict[str, Any]) -> None:
     with st.expander(f"Details: {data['repairs']} repair(s), ${usage['cost_usd']:.5f}"):
         st.write(
             f"Tokens: {usage['input_tokens']} in + {usage['output_tokens']} out. "
-            f"LLM {data['llm_seconds']:.1f}s, Snowflake {data['sql_seconds']:.1f}s."
+            f"Total {data['total_seconds']:.1f}s (LLM {data['llm_seconds']:.1f}s, "
+            f"Snowflake {data['sql_seconds']:.1f}s)."
         )
         st.write("Semantic context used: " + (", ".join(data["retrieved"]) or "none"))
         for number, attempt in enumerate(data["failed_attempts"], start=1):

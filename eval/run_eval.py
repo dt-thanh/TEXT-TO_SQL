@@ -62,6 +62,7 @@ class QuestionResult:
     cost_usd: float = 0.0
     llm_seconds: float = 0.0
     sql_seconds: float = 0.0
+    total_seconds: float = 0.0  # the whole question as a user waits for it (0 in old reports)
     split: str = "dev"
     tags: list[str] = field(default_factory=list)
     retrieved: list[str] = field(default_factory=list)  # semantic concepts/examples shown
@@ -105,7 +106,7 @@ def evaluate(gold: dict[str, Any], llm: LLMClient, warehouse: Any) -> QuestionRe
 
     spent = {"input_tokens": answer.usage.input_tokens, "output_tokens": answer.usage.output_tokens,
              "cost_usd": answer.usage.cost_usd, "llm_seconds": answer.llm_seconds,
-             "sql_seconds": answer.sql_seconds,
+             "sql_seconds": answer.sql_seconds, "total_seconds": answer.seconds,
              "retrieved": list(answer.retrieved), "repairs": answer.repairs,
              "attempt_errors": [a["error"].splitlines()[-1] for a in answer.attempts]}  # fmt: skip
     result = {**base, **spent, "generated_sql": answer.sql}
@@ -249,7 +250,8 @@ def print_report(results: list[QuestionResult]) -> None:
     tags = "  ".join(f"{tag} {p}/{n}" for tag, (p, n) in by_tag.items())
     with_sql = [r for r in results if r.generated_sql]
     ran = [r for r in with_sql if r.status in ("pass", "wrong_result", "unexpected_sql")]
-    latencies = [r.llm_seconds + r.sql_seconds for r in results] or [0.0]
+    # Reports written before total_seconds existed only have the LLM and SQL parts.
+    latencies = [r.total_seconds or r.llm_seconds + r.sql_seconds for r in results] or [0.0]
     cost = sum(r.cost_usd for r in results)
     tokens_in = sum(r.input_tokens for r in results)
     tokens_out = sum(r.output_tokens for r in results)
@@ -266,7 +268,7 @@ def print_report(results: list[QuestionResult]) -> None:
     print(f"COST                ${cost:.4f}  ({tokens_in} input + {tokens_out} output tokens), "
           f"${cost / max(len(results), 1):.5f} per question")
     print(f"LATENCY             p50 {percentile(latencies, 0.5):.1f}s   "
-          f"p95 {percentile(latencies, 0.95):.1f}s   (LLM + Snowflake, per question)")
+          f"p95 {percentile(latencies, 0.95):.1f}s   (whole question, as the user waits)")
 
 
 def main(argv: list[str] | None = None) -> int:

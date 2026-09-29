@@ -65,6 +65,9 @@ class FakeConnection:
     def close(self) -> None:
         self.closed = True
 
+    def is_closed(self) -> bool:
+        return self.closed
+
     def cursor(self, cursor_class: Any = None) -> FakeCursor:
         return self._cursor
 
@@ -180,3 +183,72 @@ def test_a_result_with_two_columns_of_the_same_name_is_refused(
 
     with pytest.raises(WarehouseError, match="duplicate column names: AVG\\(X\\)"):
         SnowflakeClient(settings).execute("SELECT AVG(x), AVG(x) FROM t")
+
+
+class CountingConnect:
+    """Replaces snowflake.connector.connect: hands out connections and counts the logins."""
+
+    def __init__(self, *cursors: FakeCursor) -> None:
+        self.cursors = list(cursors)
+        self.opened: list[FakeConnection] = []
+        self.kwargs: dict[str, Any] = {}
+
+    def __call__(self, **kwargs: Any) -> FakeConnection:
+        self.kwargs = kwargs
+        cursor = self.cursors[min(len(self.opened), len(self.cursors) - 1)]
+        self.opened.append(FakeConnection(cursor))
+        return self.opened[-1]
+
+
+def test_a_kept_connection_is_opened_once_and_reused(
+    monkeypatch: pytest.MonkeyPatch, settings: Settings
+) -> None:
+    # Each login costs ~2 s of key-pair authentication; an API answering questions all day
+    # should pay it once, not two or three times per question.
+    connect = CountingConnect(FakeCursor(rows=[{"N": 1}]))
+    monkeypatch.setattr(snowflake.connector, "connect", connect)
+    client = SnowflakeClient(settings, keep_connection=True)
+
+    client.execute("SELECT 1 AS n")
+    client.execute("SELECT 1 AS n")
+
+    assert len(connect.opened) == 1 and not connect.opened[0].closed
+    assert connect.kwargs["client_session_keep_alive"] is True  # an idle session must not expire
+
+
+def test_a_dead_session_is_reopened_and_the_query_run_again_once(
+    monkeypatch: pytest.MonkeyPatch, settings: Settings
+) -> None:
+    expired = DatabaseError(msg="Authentication token has expired.", errno=390114)
+    connect = CountingConnect(FakeCursor(rows=[], error=expired), FakeCursor(rows=[{"N": 1}]))
+    monkeypatch.setattr(snowflake.connector, "connect", connect)
+    client = SnowflakeClient(settings, keep_connection=True)
+
+    assert client.execute("SELECT 1 AS n") == [{"N": 1}]
+    assert len(connect.opened) == 2 and connect.opened[0].closed
+
+
+def test_a_real_query_error_is_not_retried_on_a_kept_connection(
+    monkeypatch: pytest.MonkeyPatch, settings: Settings
+) -> None:
+    wrong = ProgrammingError(msg="SQL compilation error: invalid identifier 'NOPE'", errno=904)
+    connect = CountingConnect(FakeCursor(rows=[], error=wrong))
+    monkeypatch.setattr(snowflake.connector, "connect", connect)
+
+    with pytest.raises(WarehouseError, match="invalid identifier"):
+        SnowflakeClient(settings, keep_connection=True).execute("SELECT nope")
+
+    assert len(connect.opened) == 1
+
+
+def test_close_ends_the_kept_connection(
+    monkeypatch: pytest.MonkeyPatch, settings: Settings
+) -> None:
+    connect = CountingConnect(FakeCursor(rows=[{"N": 1}]))
+    monkeypatch.setattr(snowflake.connector, "connect", connect)
+    client = SnowflakeClient(settings, keep_connection=True)
+    client.execute("SELECT 1 AS n")
+
+    client.close()
+
+    assert connect.opened[0].closed

@@ -63,6 +63,7 @@ def test_a_correct_first_attempt_needs_one_llm_call_and_no_repair() -> None:
 
     assert answer.rows == [{"CLOSE_PRICE": 1}] and answer.error is None
     assert len(llm.prompts) == 1 and answer.repairs == 0 and answer.attempts == ()
+    assert answer.seconds > 0  # the whole question is timed, not only the LLM and SQL parts
 
 
 def test_a_snowflake_compilation_error_is_sent_back_and_repaired() -> None:

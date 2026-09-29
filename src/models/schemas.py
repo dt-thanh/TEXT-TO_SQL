@@ -66,3 +66,4 @@ class AskResponse(BaseModel):
     usage: Usage
     llm_seconds: float
     sql_seconds: float
+    total_seconds: float  # the whole question, metadata lookup included

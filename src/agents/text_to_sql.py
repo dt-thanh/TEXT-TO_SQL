@@ -7,7 +7,9 @@ and caps its rows (src/services/sql_guard.py), then the query runs as FINSIGHT_A
 can only SELECT from MART, with a timeout.
 """
 
+import time
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import Any
 
 from src.agents.graph import MAX_REPAIRS, build_graph
@@ -37,19 +39,23 @@ class Answer:
     retrieved: tuple[str, ...] = ()  # semantic concepts and examples shown to the model
     repairs: int = 0
     attempts: tuple[Attempt, ...] = ()  # every failed attempt, oldest first
+    seconds: float = 0.0  # wall-clock time of the whole question, metadata lookup included
 
 
+@lru_cache
 def agent_warehouse() -> SnowflakeClient:
-    """Snowflake connection as the read-only agent user, with a 30 s statement timeout."""
+    """The read-only agent user's Snowflake client, one per process, with a 30 s statement
+    timeout. It keeps its connection open, so questions after the first skip the ~2 s login."""
 
     return SnowflakeClient(
         get_settings().for_agent(),
         query_tag="finsight_agent",
         statement_timeout_seconds=STATEMENT_TIMEOUT_SECONDS,
+        keep_connection=True,
     )
 
 
-def to_answer(state: AgentState, max_rows: int) -> Answer:
+def to_answer(state: AgentState, max_rows: int, seconds: float = 0.0) -> Answer:
     """The graph's final state, in the shape the CLI, the eval and the API use."""
 
     error = state.get("error")
@@ -72,6 +78,7 @@ def to_answer(state: AgentState, max_rows: int) -> Answer:
         retrieved=state.get("retrieved", ()),
         repairs=state.get("repairs", 0),
         attempts=tuple(state.get("attempts", [])),
+        seconds=seconds,
     )
 
 
@@ -87,4 +94,6 @@ def answer_question(
     llm = llm or LLMClient()
     warehouse = warehouse or agent_warehouse()
     graph = build_graph(llm, warehouse, max_rows=max_rows, max_repairs=max_repairs)
-    return to_answer(graph.invoke({"question": question}), max_rows)
+    started = time.perf_counter()
+    state = graph.invoke({"question": question})
+    return to_answer(state, max_rows, seconds=time.perf_counter() - started)

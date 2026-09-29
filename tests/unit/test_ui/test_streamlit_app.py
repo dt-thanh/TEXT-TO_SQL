@@ -19,7 +19,7 @@ BASE = {
     "truncated": False, "chart": {"kind": "bar", "x": "SYMBOL", "y": ["R"], "color": None},
     "error": None, "violations": [], "repairs": 0, "failed_attempts": [], "retrieved": [],
     "usage": {"input_tokens": 2000, "output_tokens": 150, "cost_usd": 0.0004},
-    "llm_seconds": 2.0, "sql_seconds": 0.5,
+    "llm_seconds": 2.0, "sql_seconds": 0.5, "total_seconds": 3.1,
 }  # fmt: skip
 
 

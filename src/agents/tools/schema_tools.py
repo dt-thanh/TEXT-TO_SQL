@@ -8,11 +8,17 @@ The same rows give the SQL guard its table allowlist: the tables the model is sh
 the tables its SQL may read.
 """
 
+import time
 from collections import defaultdict
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
+from weakref import WeakKeyDictionary
 
 SCHEMA = "MART"
+# The MART schema changes when dbt changes a model, at most once a day; reading it costs a query.
+# A new column reaches the agent at most this late.
+SCHEMA_TTL_SECONDS = 600
 
 SCHEMA_SQL = """
 select
@@ -61,11 +67,21 @@ def table_names(rows: list[dict[str, Any]], database: str = "FINSIGHT") -> froze
     return frozenset(f"{database}.{SCHEMA}.{row['TABLE_NAME']}" for row in rows)
 
 
-def get_schema_context(client: Any) -> SchemaContext:
+# One cached context per warehouse client, forgotten when the client is garbage-collected.
+_cache: "WeakKeyDictionary[Any, tuple[float, SchemaContext]]" = WeakKeyDictionary()
+
+
+def get_schema_context(client: Any, clock: Callable[[], float] = time.monotonic) -> SchemaContext:
     """Prompt text and table allowlist. `client` is a SnowflakeClient (the agent's, in production).
 
-    If the lookup returns no rows, the allowlist is empty and the guard blocks every table.
+    Read from Snowflake at most once per SCHEMA_TTL_SECONDS per client. If the lookup returns no
+    rows, the allowlist is empty and the guard blocks every table.
     """
 
+    cached = _cache.get(client)
+    if cached and clock() - cached[0] < SCHEMA_TTL_SECONDS:
+        return cached[1]
     rows = client.execute(SCHEMA_SQL, {"schema": SCHEMA})
-    return SchemaContext(prompt_text=format_schema_context(rows), tables=table_names(rows))
+    context = SchemaContext(prompt_text=format_schema_context(rows), tables=table_names(rows))
+    _cache[client] = (clock(), context)
+    return context
