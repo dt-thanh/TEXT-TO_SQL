@@ -6,7 +6,8 @@ from typing import Any
 
 import pytest
 
-from src.agents.text_to_sql import answer_question, build_user_prompt, system_prompt
+from src.agents.sql_generation import build_user_prompt, system_prompt
+from src.agents.text_to_sql import answer_question
 from src.agents.tools.schema_tools import format_schema_context, table_names
 from src.common.config import Settings
 from src.common.exceptions import ConfigError, WarehouseError

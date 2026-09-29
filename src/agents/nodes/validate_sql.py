@@ -1,20 +1,28 @@
-"""Validate generated SQL before it reaches Snowflake.
+"""Run the SQL guard (lesson 10) on the model's SQL. Nothing reaches Snowflake here."""
 
-TODO: Delegate to SQLGuard for read-only, no-SELECT-star, and LIMIT rules.
-"""
+from typing import Any
 
-from src.agents.state import AgentState
+from src.agents.state import AgentState, Attempt
+from src.services.sql_guard import SQLGuard
+
+# Violations that show an attempt to write or to break out of the rules. They are final: asking
+# the model to "fix" a DELETE would only teach it to get around the guard.
+FINAL_VIOLATIONS = frozenset(
+    {"not_select", "forbidden_statement", "multiple_statements", "forbidden_function"}
+)
 
 
-def validate_sql(state: AgentState) -> dict[str, object]:
-    """Mark placeholder SQL valid without performing real validation.
+def validate_sql(state: AgentState, *, max_rows: int) -> dict[str, Any]:
+    guard = SQLGuard(state["allowed_tables"], max_rows=max_rows)
+    checked = guard.validate_and_rewrite(state["sql"])
+    if checked.is_valid:
+        return {"safe_sql": checked.sql, "limit_enforced": checked.limit_enforced, "error": None}
 
-    TODO: Return structured validation errors from sqlglot parsing and policy checks.
-    """
-
-    sql = state.get("sql", "")
+    # A mistake like SELECT * or a short table name is worth one more try.
+    error = f"Blocked by the SQL guard: {checked.error}"
     return {
-        "validated_sql": sql,
-        "validation_passed": bool(sql),
-        "error": None if sql else "No SQL was generated.",
+        "error": error,
+        "violations": checked.violations,
+        "retryable": not FINAL_VIOLATIONS.intersection(checked.violations),
+        "attempts": [Attempt(sql=state["sql"], error=error)],
     }

@@ -21,7 +21,9 @@ chạy và **hiển thị SQL** cùng kết quả.
 - Phase 5: SQL guard (sqlglot) — chỉ cho một câu SELECT trên bảng MART được phép, không `SELECT *`, ép
   LIMIT ≤ 100.
 - Phase 6: semantic layer (`semantic/*.yml`: phạm vi dữ liệu, định nghĩa metric, glossary, SQL mẫu đã kiểm
-  chứng) + retrieval theo từ đồng nghĩa (Việt/Anh, có/không dấu). Chưa có repair loop, UI.
+  chứng) + retrieval theo từ đồng nghĩa (Việt/Anh, có/không dấu).
+- Phase 7: LangGraph — retrieve_context → generate_sql → validate_sql → execute_sql, lỗi guard/biên dịch
+  được gửi lại cho model sửa (repair_sql), tối đa 2 lần. Chưa có API, UI.
 
 ## Cài đặt
 
@@ -179,6 +181,13 @@ chỉ cho đọc bảng có trong metadata MART (tên đầy đủ `FINSIGHT.MAR
 function, không `SYSTEM$`, rồi thêm/giảm LIMIT về tối đa 100. SQL được chạy là bản guard in lại từ cây đã
 kiểm tra (bỏ comment). Câu bị chặn không chạm tới Snowflake và trả về mã lỗi (`violations`) cho repair loop.
 
+### Repair loop (LangGraph)
+
+Luồng nằm trong [src/agents/graph.py](src/agents/graph.py), sơ đồ và bảng phân loại lỗi ở
+[docs/architecture.md](docs/architecture.md). Khi guard chặn một lỗi sửa được (`SELECT *`, tên bảng thiếu) hoặc
+Snowflake báo `SQL compilation error`, SQL hỏng cùng thông báo lỗi được gửi lại cho model, tối đa 2 lần. Lệnh ghi
+(DELETE, nhiều câu lệnh, `SYSTEM$`), timeout và lỗi kết nối không được sửa. `make ask` in từng lần thử thất bại.
+
 ### Semantic layer
 
 Mô tả **cột** nằm trong dbt (`_marts.yml` → COMMENT trong Snowflake → schema trong prompt).
@@ -212,6 +221,8 @@ Sau SQL guard (regrade cùng SQL đó): vẫn 8/11, không câu nào bị chặn
 sửa lỗi nghĩa. `tests/integration/test_sql_guard_gold.py` kiểm tra guard không đổi đáp án của SQL gold.
 Sau semantic layer (2026-09-28): **10/11 = 91%**, $0,0039 — q04, q11 đúng; q10 vẫn sai (lọc trước LAG).
 Lưu ý: semantic layer được chỉnh sau khi nhìn 11 câu này, nên con số lạc quan; bộ 30 câu (Bài 14) mới đo thật.
+Sau repair loop (2026-09-29): **10/11**, $0,0052 — 2 câu cần sửa (3 lần gọi sửa), q07 sửa thành công; q10 lặp lại
+cùng một lỗi thiếu cột 3 lần.
 
 ## Lệnh
 

@@ -10,7 +10,8 @@ Prints the SQL, how it works, the result table, and what the LLM call cost.
 import logging
 import sys
 
-from src.agents.text_to_sql import agent_warehouse, answer_question, prepare_prompt, system_prompt
+from src.agents.sql_generation import prepare_prompt, system_prompt
+from src.agents.text_to_sql import agent_warehouse, answer_question
 from src.common.config import get_settings
 from src.common.exceptions import FinSightError
 from src.common.logging_config import setup_logging
@@ -66,6 +67,9 @@ def main(argv: list[str] | None = None) -> int:
     sql_title = "SQL (blocked by the guard, not run)" if answer.violations else "SQL (after guard)"
     print(f"{sql_title}\n{answer.sql or '(none)'}\n")
     print(f"HOW THIS SQL WORKS\n{answer.explanation}\n")
+    for number, attempt in enumerate(answer.attempts, start=1):
+        first_line = attempt["error"].splitlines()[0]
+        print(f"FAILED ATTEMPT {number} (sent back to the model)\n{first_line}\n")
     if answer.error:
         print(f"ERROR\n{answer.error}\n")
     print("RESULT")
@@ -75,6 +79,7 @@ def main(argv: list[str] | None = None) -> int:
     u = answer.usage
     print(
         f"\nCOST  {u.input_tokens} input + {u.output_tokens} output tokens = ${u.cost_usd:.5f}"
+        f"  |  repairs {answer.repairs}"
         f"  |  LLM {answer.llm_seconds:.1f}s, SQL {answer.sql_seconds:.1f}s"
     )
     return 0

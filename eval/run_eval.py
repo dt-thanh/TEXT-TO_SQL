@@ -52,6 +52,8 @@ class QuestionResult:
     cost_usd: float = 0.0
     llm_seconds: float = 0.0
     retrieved: list[str] = field(default_factory=list)  # semantic concepts/examples shown
+    repairs: int = 0  # LLM calls spent fixing a failed attempt
+    attempt_errors: list[str] = field(default_factory=list)  # last line of each failed attempt
 
     @property
     def passed(self) -> bool:
@@ -76,7 +78,8 @@ def evaluate(gold: dict[str, Any], llm: LLMClient, warehouse: Any) -> QuestionRe
 
     spent = {"input_tokens": answer.usage.input_tokens, "output_tokens": answer.usage.output_tokens,
              "cost_usd": answer.usage.cost_usd, "llm_seconds": answer.llm_seconds,
-             "retrieved": list(answer.retrieved)}  # fmt: skip
+             "retrieved": list(answer.retrieved), "repairs": answer.repairs,
+             "attempt_errors": [a["error"].splitlines()[-1] for a in answer.attempts]}  # fmt: skip
     result = {**base, **spent, "generated_sql": answer.sql}
 
     if gold["expected_sql"] is None:  # the right answer is "this data cannot answer that"
@@ -178,6 +181,10 @@ def print_report(results: list[QuestionResult]) -> None:
 
     print(f"\nEXECUTION ACCURACY  {passed}/{len(results)} = {passed / max(len(results), 1):.0%}")
     print(f"BY LEVEL            {levels}")
+    repaired = [r for r in results if r.repairs]
+    fixed = sum(r.passed for r in repaired)
+    print(f"REPAIRS             {len(repaired)} question(s) repaired, {fixed} of them now pass "
+          f"({sum(r.repairs for r in results)} repair call(s))")
     print(f"COST                ${cost:.4f}  ({tokens_in} input + {tokens_out} output tokens)")
     print(f"AVG LLM LATENCY     {avg_llm:.1f}s")
 

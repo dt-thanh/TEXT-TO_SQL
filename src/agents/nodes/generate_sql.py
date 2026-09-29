@@ -1,20 +1,19 @@
-"""Generate Snowflake SQL from a question and schema context.
+"""First attempt: ask the model for SQL."""
 
-TODO: Call the configured LLM with system and few-shot prompts.
-"""
+from typing import Any
 
+from src.agents.sql_generation import write_sql
 from src.agents.state import AgentState
+from src.services.llm import LLMClient
 
 
-def generate_sql(state: AgentState) -> dict[str, object]:
-    """Return deterministic placeholder SQL so the skeleton graph can run.
-
-    TODO: Replace this placeholder with a low-temperature structured LLM call.
-    """
-
+def generate_sql(state: AgentState, *, llm: LLMClient) -> dict[str, Any]:
+    written = write_sql(state["prompt"], llm)
     return {
-        "sql": "SELECT 1 AS stub_value LIMIT 1",
-        "error": None,
-        "retries": state.get("retries", 0),
-        "max_retries": state.get("max_retries", 2),
+        "sql": written.sql,
+        "explanation": written.explanation,
+        "error": None,  # a new SQL starts with a clean slate
+        "violations": (),
+        "usage": written.usage,
+        "llm_seconds": written.llm_seconds,
     }
