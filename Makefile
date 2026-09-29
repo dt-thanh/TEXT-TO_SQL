@@ -7,8 +7,8 @@ DBT := set -a && . ./.env && set +a && cd dbt && ../.venv/bin/dbt
 # run as you, so files they write into the repo stay yours.
 AIRFLOW := AIRFLOW_UID=$$(id -u) docker compose -f airflow/docker-compose.yml
 
-.PHONY: install run ui app-up app-down test test-unit lint check-snowflake load-binance load-fred \
-	dbt-deps dbt-build dbt-freshness dbt-docs airflow-up airflow-down airflow-check airflow-logs ask \
+.PHONY: install run ui app-up app-down ci test test-unit lint check-snowflake load-binance load-fred \
+	dbt-deps dbt-build dbt-parse dbt-freshness dbt-docs airflow-up airflow-down airflow-check airflow-logs ask \
 	prompt eval eval-gold
 
 install:
@@ -53,6 +53,13 @@ dbt-deps:
 # Extra dbt flags: make dbt-build ARGS="--full-refresh" or ARGS="--select fct_crypto_kline_1h"
 dbt-build:
 	$(DBT) build $(ARGS)
+
+# Does the dbt project compile (SQL, Jinja, refs, tests)? Does not query Snowflake.
+dbt-parse:
+	$(DBT) parse
+
+# The offline checks CI runs on every push (.github/workflows/ci.yml), before you push.
+ci: lint test-unit dbt-parse
 
 # Is RAW data recent enough? (limits in dbt/models/staging/_sources.yml)
 dbt-freshness:
