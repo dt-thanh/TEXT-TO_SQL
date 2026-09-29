@@ -20,8 +20,12 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 COPY --from=builder /opt/venv /opt/venv
+# Everything the API and the UI read at runtime. Forgetting one (semantic/ was missing before
+# lesson 13) only fails when the first question arrives, so the unit tests do not catch it.
 COPY src ./src
 COPY prompts ./prompts
+COPY semantic ./semantic
+COPY ui ./ui
 
 EXPOSE 8000
 CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000"]

@@ -7,15 +7,27 @@ DBT := set -a && . ./.env && set +a && cd dbt && ../.venv/bin/dbt
 # run as you, so files they write into the repo stay yours.
 AIRFLOW := AIRFLOW_UID=$$(id -u) docker compose -f airflow/docker-compose.yml
 
-.PHONY: install run test test-unit lint check-snowflake load-binance load-fred \
+.PHONY: install run ui app-up app-down test test-unit lint check-snowflake load-binance load-fred \
 	dbt-deps dbt-build dbt-docs airflow-up airflow-down airflow-check airflow-logs ask \
 	prompt eval eval-gold
 
 install:
 	$(PY) -m pip install -r requirements.txt
 
+# The API on http://localhost:8000 (docs: /docs). Restarts when code changes.
 run:
-	$(PY) -m uvicorn src.main:app --reload
+	$(PY) -m uvicorn src.main:app --reload --port 8000
+
+# The Streamlit screen on http://localhost:8501. Needs the API running (make run).
+ui:
+	$(PY) -m streamlit run ui/streamlit_app.py --server.port 8501
+
+# API + UI in Docker (docker-compose.yml at the repository root).
+app-up:
+	docker compose up -d --build
+
+app-down:
+	docker compose down
 
 test:
 	$(PY) -m pytest

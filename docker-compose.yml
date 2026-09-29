@@ -1,12 +1,17 @@
-# Local API service. TODO: Add observability or supporting services only when needed.
+# FinSight API + Streamlit UI (make app-up). Airflow has its own compose file in airflow/.
+# One image, two services: the same code, started with two different commands.
 services:
   api:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    build: .
+    image: finsight-app
     env_file:
       - path: .env
         required: false
+    environment:
+      # .env holds the host path of the agent's key; inside the container it is mounted here.
+      SNOWFLAKE_AGENT_PRIVATE_KEY_PATH: /opt/secrets/finsight_agent_key.p8
+    volumes:
+      - ${HOME}/.snowflake:/opt/secrets:ro  # the private key, read-only, never in the image
     ports:
       - "8000:8000"
     healthcheck:
@@ -20,3 +25,22 @@ services:
       interval: 10s
       timeout: 3s
       retries: 3
+
+  ui:
+    image: finsight-app
+    command:
+      - streamlit
+      - run
+      - ui/streamlit_app.py
+      - --server.address=0.0.0.0
+      - --server.port=8501
+      - --server.headless=true
+    environment:
+      # "api" is the service name above: containers on one compose network reach each other by it.
+      FINSIGHT_API_URL: http://api:8000
+    # No env_file and no key: the UI only talks to the API, so it holds no secret.
+    ports:
+      - "8501:8501"
+    depends_on:
+      api:
+        condition: service_healthy

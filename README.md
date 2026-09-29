@@ -23,7 +23,9 @@ chạy và **hiển thị SQL** cùng kết quả.
 - Phase 6: semantic layer (`semantic/*.yml`: phạm vi dữ liệu, định nghĩa metric, glossary, SQL mẫu đã kiểm
   chứng) + retrieval theo từ đồng nghĩa (Việt/Anh, có/không dấu).
 - Phase 7: LangGraph — retrieve_context → generate_sql → validate_sql → execute_sql, lỗi guard/biên dịch
-  được gửi lại cho model sửa (repair_sql), tối đa 2 lần. Chưa có API, UI.
+  được gửi lại cho model sửa (repair_sql), tối đa 2 lần.
+- Phase 8: FastAPI `POST /ask` + giao diện Streamlit (câu trả lời, biểu đồ, bảng, SQL luôn hiển thị, các lần sửa,
+  chi phí), chạy local hoặc bằng Docker Compose.
 
 ## Cài đặt
 
@@ -181,6 +183,20 @@ chỉ cho đọc bảng có trong metadata MART (tên đầy đủ `FINSIGHT.MAR
 function, không `SYSTEM$`, rồi thêm/giảm LIMIT về tối đa 100. SQL được chạy là bản guard in lại từ cây đã
 kiểm tra (bỏ comment). Câu bị chặn không chạm tới Snowflake và trả về mã lỗi (`violations`) cho repair loop.
 
+### API và giao diện
+
+```bash
+make run    # API: http://localhost:8000/docs  (POST /ask, GET /health)
+make ui     # terminal thứ hai, giao diện: http://localhost:8501
+make app-up # hoặc cả hai trong Docker (Docker Desktop phải đang chạy); make app-down để tắt
+```
+
+`POST /ask {"question": "..."}` trả về `status` (`answered` / `declined` / `blocked` / `failed`), `sql`, `explanation`,
+`rows` (JSON thuần: Decimal → số, date → ISO), `chart` (chọn bằng luật trong
+[chart_service.py](src/services/chart_service.py), không gọi LLM), các lần sửa và chi phí. SQL bị chặn hay lỗi vẫn là
+câu trả lời (200); không gọi được OpenAI/Snowflake là 503 (chi tiết chỉ nằm trong log). Giao diện
+[ui/streamlit_app.py](ui/streamlit_app.py) chỉ gọi API, không có khóa bí mật nào.
+
 ### Repair loop (LangGraph)
 
 Luồng nằm trong [src/agents/graph.py](src/agents/graph.py), sơ đồ và bảng phân loại lỗi ở
@@ -227,7 +243,7 @@ cùng một lỗi thiếu cột 3 lần.
 ## Lệnh
 
 ```bash
-make run              # chạy API (uvicorn)
+make run              # chạy API (uvicorn, :8000)
 make test             # pytest: unit + integration (integration gọi Binance thật)
 make test-unit        # chỉ unit test, chạy offline được
 make lint             # ruff
@@ -236,6 +252,7 @@ make load-binance     # nạp incremental Binance → RAW
 make load-fred        # nạp incremental FRED → RAW
 make dbt-build        # dbt: tạo model + chạy data test
 make airflow-up       # Airflow: pipeline tự chạy hằng ngày (UI :8081)
+make ui               # giao diện Streamlit (cần make run)
 make ask Q="..."      # hỏi dữ liệu bằng ngôn ngữ tự nhiên
 make prompt Q="..."   # xem prompt model sẽ đọc, không gọi LLM
 ```
@@ -250,6 +267,7 @@ src/ingestion/     lấy dữ liệu nguồn (Binance, FRED) và nạp vào RAW;
 src/agents/        vòng Text-to-SQL; LangGraph workflow (skeleton)
 src/semantic/      đọc semantic/*.yml và chọn ngữ cảnh cho từng câu hỏi
 semantic/          semantic layer: metric, glossary, SQL mẫu (dữ liệu, viết tay)
+ui/                giao diện Streamlit, chỉ gọi API
 src/api/           FastAPI routes
 infra/snowflake/   SQL dựng warehouse, database, schema, role, user
 dbt/               dự án dbt: RAW → STAGING → CORE → MART, kèm data test

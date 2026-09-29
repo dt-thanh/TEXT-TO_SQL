@@ -41,7 +41,8 @@ next repair and to the analyst.
 
 ## Boundaries
 
-- `src/api` owns HTTP contracts and routing.
+- `ui` is a thin Streamlit client: it calls `POST /ask`, imports nothing from `src`, holds no secret.
+- `src/api` owns HTTP contracts and routing; `src/models/schemas.py` is the contract.
 - `src/agents` owns state, nodes, edges, retry routing, and prompt building (`sql_generation.py`).
 - `src/semantic` reads the semantic layer (`semantic/*.yml`) and picks context per question.
 - `src/services` owns provider adapters and the SQL safety boundary.
