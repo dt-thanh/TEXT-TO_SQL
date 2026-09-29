@@ -8,7 +8,7 @@ DBT := set -a && . ./.env && set +a && cd dbt && ../.venv/bin/dbt
 AIRFLOW := AIRFLOW_UID=$$(id -u) docker compose -f airflow/docker-compose.yml
 
 .PHONY: install run ui app-up app-down test test-unit lint check-snowflake load-binance load-fred \
-	dbt-deps dbt-build dbt-docs airflow-up airflow-down airflow-check airflow-logs ask \
+	dbt-deps dbt-build dbt-freshness dbt-docs airflow-up airflow-down airflow-check airflow-logs ask \
 	prompt eval eval-gold
 
 install:
@@ -53,6 +53,10 @@ dbt-deps:
 # Extra dbt flags: make dbt-build ARGS="--full-refresh" or ARGS="--select fct_crypto_kline_1h"
 dbt-build:
 	$(DBT) build $(ARGS)
+
+# Is RAW data recent enough? (limits in dbt/models/staging/_sources.yml)
+dbt-freshness:
+	$(DBT) source freshness
 
 dbt-docs:
 	$(DBT) docs generate

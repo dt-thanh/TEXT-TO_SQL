@@ -10,4 +10,9 @@ def retrieve_context(state: AgentState, *, warehouse: Any) -> dict[str, Any]:
     """Runs once per question, before any LLM call. The repair loop reuses the result."""
 
     prompt = prepare_prompt(state["question"], warehouse)
-    return {"prompt": prompt.user, "allowed_tables": prompt.tables, "retrieved": prompt.retrieved}
+    return {
+        "prompt": prompt.user,
+        "allowed_tables": prompt.tables,
+        "retrieved": prompt.retrieved,
+        "data_as_of": prompt.data_as_of,
+    }

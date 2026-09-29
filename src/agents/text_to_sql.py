@@ -9,6 +9,7 @@ can only SELECT from MART, with a timeout.
 
 import time
 from dataclasses import dataclass
+from datetime import date
 from functools import lru_cache
 from typing import Any
 
@@ -40,6 +41,7 @@ class Answer:
     repairs: int = 0
     attempts: tuple[Attempt, ...] = ()  # every failed attempt, oldest first
     seconds: float = 0.0  # wall-clock time of the whole question, metadata lookup included
+    data_as_of: date | None = None  # newest finished UTC day in the marts: answers stop there
 
 
 @lru_cache
@@ -79,6 +81,7 @@ def to_answer(state: AgentState, max_rows: int, seconds: float = 0.0) -> Answer:
         repairs=state.get("repairs", 0),
         attempts=tuple(state.get("attempts", [])),
         seconds=seconds,
+        data_as_of=state.get("data_as_of"),
     )
 
 

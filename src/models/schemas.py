@@ -4,6 +4,7 @@ Pydantic checks the request before any code runs (an empty or 5,000-character qu
 not an LLM call) and documents both shapes at /docs.
 """
 
+from datetime import date
 from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, StringConstraints
@@ -67,3 +68,4 @@ class AskResponse(BaseModel):
     llm_seconds: float
     sql_seconds: float
     total_seconds: float  # the whole question, metadata lookup included
+    data_as_of: date | None  # newest finished UTC day in the data: answers stop there

@@ -51,6 +51,7 @@ class Prompt:
     user: str  # the user message: date, schema, semantic context, question
     tables: frozenset[str]  # the guard's allowlist, from the same metadata as the schema text
     retrieved: tuple[str, ...]
+    data_as_of: date | None = None
 
 
 @lru_cache
@@ -62,14 +63,19 @@ def system_prompt() -> str:
 
 
 def build_user_prompt(
-    question: str, schema_context: str, today: date, semantic_context: str = ""
+    question: str,
+    schema_context: str,
+    today: date,
+    semantic_context: str = "",
+    data_as_of: date | None = None,
 ) -> str:
-    """Per-question message: today's date (for "last month"), the schema, what the words of the
-    question mean in this data, then the question last."""
+    """Per-question message: today's date (for "last month") and the newest day with data, the
+    schema, what the words of the question mean in this data, then the question last."""
 
     semantic = f"{semantic_context}\n\n" if semantic_context else ""
+    latest = f"\nLatest day with data (UTC): {data_as_of.isoformat()}" if data_as_of else ""
     return (
-        f"Today (UTC): {today.isoformat()}\n\n"
+        f"Today (UTC): {today.isoformat()}{latest}\n\n"
         f"# Schema\n{schema_context}\n\n"
         f"{semantic}"
         f"# Question\n{question}"
@@ -83,9 +89,13 @@ def prepare_prompt(question: str, warehouse: Any, today: date | None = None) -> 
     knowledge = retrieve(question, load_semantic_layer())
     logger.info("Semantic context: %s", ", ".join(knowledge.ids) or "(no concept matched)")
     user = build_user_prompt(
-        question, schema.prompt_text, today or datetime.now(UTC).date(), format_context(knowledge)
+        question,
+        schema.prompt_text,
+        today or datetime.now(UTC).date(),
+        format_context(knowledge),
+        schema.data_as_of,
     )
-    return Prompt(user=user, tables=schema.tables, retrieved=knowledge.ids)
+    return Prompt(user, schema.tables, knowledge.ids, schema.data_as_of)
 
 
 def build_repair_prompt(user_prompt: str, attempts: list[Attempt]) -> str:

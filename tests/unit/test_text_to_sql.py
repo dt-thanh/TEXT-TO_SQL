@@ -69,6 +69,13 @@ def test_user_prompt_carries_today_so_last_month_can_be_resolved() -> None:
     assert prompt.endswith("Last month?")  # the question comes last
 
 
+def test_user_prompt_says_up_to_which_day_there_is_data() -> None:
+    today, latest = date(2026, 9, 29), date(2026, 9, 28)
+    prompt = build_user_prompt("Yesterday?", "SCHEMA", today, data_as_of=latest)
+
+    assert "Today (UTC): 2026-09-29\nLatest day with data (UTC): 2026-09-28" in prompt
+
+
 def test_system_prompt_holds_only_rules_that_apply_to_every_question() -> None:
     text = system_prompt()
 

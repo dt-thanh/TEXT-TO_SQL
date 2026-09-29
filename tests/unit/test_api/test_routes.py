@@ -29,6 +29,7 @@ ANSWERED = Answer(
     sql_seconds=0.8,
     retrieved=("close_price",),
     seconds=3.4,
+    data_as_of=date(2026, 9, 28),
 )
 
 
@@ -67,6 +68,7 @@ def test_an_answer_comes_back_as_plain_json_with_its_sql_and_a_chart() -> None:
     assert body["chart"] == {"kind": "line", "x": "TRADE_DATE", "y": ["CLOSE_PRICE"], "color": None}
     assert body["usage"] == {"input_tokens": 2000, "output_tokens": 150, "cost_usd": 0.0004}
     assert body["total_seconds"] == 3.4
+    assert body["data_as_of"] == "2026-09-28"
 
 
 def test_a_value_json_cannot_hold_becomes_null() -> None:

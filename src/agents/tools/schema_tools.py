@@ -12,6 +12,7 @@ import time
 from collections import defaultdict
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import date
 from typing import Any
 from weakref import WeakKeyDictionary
 
@@ -26,7 +27,9 @@ select
     t.comment      as table_comment,
     c.column_name,
     c.data_type,
-    c.comment      as column_comment
+    c.comment      as column_comment,
+    -- How recent the data is, in the same round trip: the newest finished day in the marts.
+    (select max(trade_date) from FINSIGHT.MART.MART_ASSET_DAILY) as latest_trade_date
 from FINSIGHT.INFORMATION_SCHEMA.TABLES as t
 join FINSIGHT.INFORMATION_SCHEMA.COLUMNS as c
     on  c.table_schema = t.table_schema
@@ -42,6 +45,7 @@ class SchemaContext:
 
     prompt_text: str
     tables: frozenset[str]  # fully qualified, e.g. FINSIGHT.MART.MART_ASSET_DAILY
+    data_as_of: date | None = None  # newest finished UTC day in the marts
 
 
 def format_schema_context(rows: list[dict[str, Any]], database: str = "FINSIGHT") -> str:
@@ -82,6 +86,10 @@ def get_schema_context(client: Any, clock: Callable[[], float] = time.monotonic)
     if cached and clock() - cached[0] < SCHEMA_TTL_SECONDS:
         return cached[1]
     rows = client.execute(SCHEMA_SQL, {"schema": SCHEMA})
-    context = SchemaContext(prompt_text=format_schema_context(rows), tables=table_names(rows))
+    context = SchemaContext(
+        prompt_text=format_schema_context(rows),
+        tables=table_names(rows),
+        data_as_of=rows[0].get("LATEST_TRADE_DATE") if rows else None,
+    )
     _cache[client] = (clock(), context)
     return context

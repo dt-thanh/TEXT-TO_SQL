@@ -11,6 +11,7 @@ SQL (generate_sql, repair_sql) resets error and violations, so nothing stale sur
 """
 
 import operator
+from datetime import date
 from typing import Annotated, Any, TypedDict
 
 from src.services.llm import LLMUsage
@@ -41,6 +42,7 @@ class AgentState(TypedDict, total=False):
     prompt: str  # the user message: date, schema, semantic context, question
     allowed_tables: frozenset[str]  # the SQL guard's allowlist
     retrieved: tuple[str, ...]  # semantic concepts and examples shown to the model
+    data_as_of: date | None  # newest finished UTC day in the marts
 
     # The current attempt
     sql: str  # what the model wrote ("" = the data cannot answer the question)

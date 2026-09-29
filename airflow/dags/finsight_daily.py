@@ -54,11 +54,20 @@ with DAG(
         bash_command=f"cd {PROJECT_DIR} && {VENV}/python -m scripts.load_fred",
     )
 
+    # A load can "succeed" with nothing new (an API that stopped updating, a stuck watermark).
+    # This fails the run when the newest RAW data is too old (limits in _sources.yml), so stale
+    # data shows up red here instead of as quietly outdated answers. `dbt deps` first, so a
+    # fresh clone works without a manual `make dbt-deps`.
+    check_freshness = BashOperator(
+        task_id="check_source_freshness",
+        bash_command=dbt("deps") + " && " + dbt("source freshness"),
+    )
+
     # One task per layer: a failed test stops the layers above it, and the UI shows which
-    # layer broke. `dbt deps` first, so a fresh clone works without a manual `make dbt-deps`.
+    # layer broke.
     dbt_staging = BashOperator(
         task_id="dbt_build_staging",
-        bash_command=dbt("deps") + " && " + dbt("build --select path:seeds path:models/staging"),
+        bash_command=dbt("build --select path:seeds path:models/staging"),
     )
 
     dbt_core = BashOperator(
@@ -72,5 +81,5 @@ with DAG(
     )
 
     # Both loads can run at the same time (different sources, different RAW tables);
-    # dbt waits for both, then the layers go bottom-up.
-    [load_binance, load_fred] >> dbt_staging >> dbt_core >> dbt_marts
+    # the freshness check waits for both, then the layers go bottom-up.
+    [load_binance, load_fred] >> check_freshness >> dbt_staging >> dbt_core >> dbt_marts

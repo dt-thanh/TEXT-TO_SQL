@@ -19,7 +19,7 @@ BASE = {
     "truncated": False, "chart": {"kind": "bar", "x": "SYMBOL", "y": ["R"], "color": None},
     "error": None, "violations": [], "repairs": 0, "failed_attempts": [], "retrieved": [],
     "usage": {"input_tokens": 2000, "output_tokens": 150, "cost_usd": 0.0004},
-    "llm_seconds": 2.0, "sql_seconds": 0.5, "total_seconds": 3.1,
+    "llm_seconds": 2.0, "sql_seconds": 0.5, "total_seconds": 3.1, "data_as_of": "2026-09-28",
 }  # fmt: skip
 
 
@@ -46,6 +46,12 @@ def test_the_sql_is_shown_on_the_main_screen_not_hidden(monkeypatch: pytest.Monk
     assert all(code.value != SQL for code in app.expander[0].code)  # not only in "Details"
     assert [h.value for h in app.subheader][:4] == ["Answer", "Chart", "Result data",
                                                     "Generated SQL"]  # fmt: skip
+
+
+def test_the_screen_says_up_to_which_day_the_data_goes(monkeypatch: pytest.MonkeyPatch) -> None:
+    app = run_app(monkeypatch, BASE)
+
+    assert any("Data up to 2026-09-28" in caption.value for caption in app.caption)
 
 
 def test_a_single_row_answer_is_shown_as_numbers(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -87,6 +87,8 @@ def show_details(data: dict[str, Any]) -> None:
 
 
 def show(data: dict[str, Any]) -> None:
+    if data["data_as_of"]:
+        st.caption(f"Data up to {data['data_as_of']} (UTC). The current day is not finished yet.")
     st.subheader("Answer")
     show_answer(data)
     show_chart(data)

@@ -1,5 +1,6 @@
 """Unit tests for the cached schema context (metadata read at most once per TTL)."""
 
+from datetime import date
 from typing import Any
 
 from src.agents.tools.schema_tools import SCHEMA_TTL_SECONDS, get_schema_context
@@ -41,6 +42,15 @@ def test_metadata_is_read_once_and_reused_until_it_is_old() -> None:
     get_schema_context(warehouse, clock=clock)
 
     assert warehouse.queries == 2
+
+
+def test_the_same_read_says_how_recent_the_data_is() -> None:
+    fresh = CountingWarehouse()
+    fresh_rows = [row | {"LATEST_TRADE_DATE": date(2026, 9, 28)} for row in METADATA]
+    fresh.execute = lambda *args, **kwargs: fresh_rows  # type: ignore[method-assign]
+
+    assert get_schema_context(fresh).data_as_of == date(2026, 9, 28)
+    assert get_schema_context(CountingWarehouse()).data_as_of is None  # an empty MART
 
 
 def test_each_warehouse_connection_has_its_own_cache() -> None:

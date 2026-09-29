@@ -70,6 +70,7 @@ def to_response(answer: Answer) -> AskResponse:
         llm_seconds=answer.llm_seconds,
         sql_seconds=answer.sql_seconds,
         total_seconds=answer.seconds,
+        data_as_of=answer.data_as_of,
     )
 
 
