@@ -13,7 +13,8 @@
           └─(no SQL: gave up)────────────────────────────────────────────────────→ END
 
 Every path ends: each repair increases `repairs`, and no repair starts once it reaches
-max_repairs. LangGraph's recursion_limit (25 steps by default) is only the last safety net.
+max_repairs. LangGraph's recursion_limit (25 steps by default in the pinned 0.4.5; newer
+versions default higher) is only the last safety net.
 """
 
 from functools import partial
