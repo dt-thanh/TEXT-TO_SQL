@@ -157,3 +157,12 @@ def test_the_graph_has_the_nodes_of_spec_section_20() -> None:
 
     expected = {"retrieve_context", "generate_sql", "validate_sql", "execute_sql", "repair_sql"}
     assert nodes == expected
+
+
+def test_a_result_with_duplicate_column_names_is_sent_back_for_aliases() -> None:
+    duplicate = "Query returned duplicate column names: AVG(CLOSE_PRICE). Give every column..."
+    llm = ScriptedLLM(BAD_COLUMN_SQL, GOOD_SQL)
+
+    answer = ask(llm, FakeWarehouse(error=duplicate))
+
+    assert answer.repairs == 1 and answer.rows and answer.error is None

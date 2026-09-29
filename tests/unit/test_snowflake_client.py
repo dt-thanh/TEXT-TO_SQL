@@ -15,10 +15,18 @@ from src.services.snowflake_client import SnowflakeClient
 class FakeCursor:
     """Stands in for a Snowflake DictCursor."""
 
-    def __init__(self, rows: list[dict[str, Any]], error: Exception | None = None) -> None:
+    def __init__(
+        self,
+        rows: list[dict[str, Any]],
+        error: Exception | None = None,
+        columns: list[str] | None = None,
+    ) -> None:
         self.rows = rows
         self.error = error
         self.executed: list[tuple[str, Any]] = []
+        # DB-API description: one entry per result column, the name first.
+        names = columns if columns is not None else list(rows[0]) if rows else []
+        self.description = [(name,) for name in names]
 
     def __enter__(self) -> "FakeCursor":
         return self
@@ -160,3 +168,15 @@ def test_statement_timeout_and_query_tag_become_session_parameters(
         "QUERY_TAG": "finsight_agent",
         "STATEMENT_TIMEOUT_IN_SECONDS": 30,
     }
+
+
+def test_a_result_with_two_columns_of_the_same_name_is_refused(
+    monkeypatch: pytest.MonkeyPatch, settings: Settings
+) -> None:
+    # The DictCursor would keep only one of them, silently. Snowflake names unaliased
+    # expressions by their text, so AVG(X), AVG(X) is a duplicate the SQL guard cannot see.
+    cursor = FakeCursor(rows=[{"AVG(X)": 2}], columns=["AVG(X)", "AVG(X)"])
+    monkeypatch.setattr(snowflake.connector, "connect", lambda **kw: FakeConnection(cursor))
+
+    with pytest.raises(WarehouseError, match="duplicate column names: AVG\\(X\\)"):
+        SnowflakeClient(settings).execute("SELECT AVG(x), AVG(x) FROM t")

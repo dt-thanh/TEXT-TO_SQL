@@ -7,6 +7,8 @@ the SQL into a syntax tree with sqlglot and checks what each part of the tree IS
 - every table is written in full (DATABASE.SCHEMA.TABLE) and is on the allowlist;
 - rows come only from tables, CTEs and subqueries (no table functions around the allowlist);
 - no SELECT *;
+- no two result columns with the same name (a result row is a dict: one would be lost);
+- no LIMIT below max_rows without an ORDER BY in the same SELECT (it would pick arbitrary rows);
 - a LIMIT no higher than max_rows (added or lowered when needed).
 
 The SQL that runs is printed back from the checked tree, never the model's original text.
@@ -83,6 +85,28 @@ def select_violations(select: exp.Select) -> list[Violation]:
     return found
 
 
+def literal_limit(query: exp.Query) -> int | None:
+    """The row count of LIMIT n, TOP n or FETCH FIRST n ROWS, when n is a plain integer."""
+
+    limit = query.args.get("limit")  # all three forms land here
+    if limit is None:
+        return None
+    count = limit.expression if isinstance(limit, exp.Limit) else limit.args.get("count")
+    if isinstance(count, exp.Literal) and count.is_int:
+        return int(count.name)
+    return None
+
+
+def returns_one_row(query: exp.Query) -> bool:
+    """An aggregate without GROUP BY, e.g. SELECT AVG(x): its LIMIT cannot choose rows."""
+
+    return (
+        isinstance(query, exp.Select)
+        and not query.args.get("group")
+        and all(projection.find(exp.AggFunc) for projection in query.expressions)
+    )
+
+
 class SQLGuard:
     """Validate one generated SQL statement and rewrite it into the SQL that will run."""
 
@@ -106,7 +130,7 @@ class SQLGuard:
         if not isinstance(query, exp.Query):
             return blocked(("not_select", f"only a SELECT query may run, got {query.key.upper()}"))
 
-        violations = self.policy_violations(query)
+        violations = self.policy_violations(query) + self.result_violations(query)
         if violations:
             return blocked(*violations)
 
@@ -136,6 +160,26 @@ class SQLGuard:
                 found.extend(select_violations(node))
         return list(dict.fromkeys(found))  # drop exact repeats, keep the order
 
+    def result_violations(self, query: exp.Query) -> list[Violation]:
+        """Rules for the result itself: SQL that runs fine but returns a misleading table."""
+
+        found: list[Violation] = []
+        # Snowflake upper-cases unquoted names, so close_price and CLOSE_PRICE are one column.
+        names = [name.upper() for name in query.named_selects if name]
+        duplicates = sorted({name for name in names if names.count(name) > 1})
+        if duplicates:
+            named = ", ".join(duplicates)
+            found.append(("duplicate_column", f"more than one column named {named}: "
+                          "give every column a unique alias"))  # fmt: skip
+
+        limit = literal_limit(query)
+        if limit is not None and limit < self.max_rows and not query.args.get("order"):
+            if not returns_one_row(query):
+                found.append(("limit_without_order", f"LIMIT {limit} without ORDER BY returns "
+                              "arbitrary rows: order the rows in the same SELECT as the LIMIT "
+                              "(an ORDER BY inside a CTE or subquery does not count)"))  # fmt: skip
+        return found
+
     def table_violations(self, table: exp.Table, cte_names: set[str]) -> list[Violation]:
         name = table.name.upper()
         if not table.db and name in cte_names:
@@ -151,10 +195,8 @@ class SQLGuard:
     def cap_rows(self, query: exp.Query) -> tuple[exp.Query, bool]:
         """The query with a LIMIT of at most max_rows, and whether the guard had to change it."""
 
-        limit = query.args.get("limit")  # LIMIT n, TOP n and FETCH FIRST n ROWS all land here
-        if limit is not None:
-            count = limit.expression if isinstance(limit, exp.Limit) else limit.args.get("count")
-            if isinstance(count, exp.Literal) and count.is_int and int(count.name) <= self.max_rows:
-                return query, False
+        limit = literal_limit(query)
+        if limit is not None and limit <= self.max_rows:
+            return query, False
         # Replaces any other LIMIT: too big, LIMIT NULL (= no limit in Snowflake), an expression.
         return query.limit(self.max_rows), True

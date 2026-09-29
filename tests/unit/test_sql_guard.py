@@ -253,3 +253,54 @@ def test_a_rewrite_that_does_not_parse_back_to_one_query_is_blocked(
     monkeypatch.setattr(exp.Select, "sql", lambda self, **kwargs: "SELECT 1; DROP TABLE t")
 
     assert violations_of(f"SELECT symbol FROM {ASSET}") == ("rewrite_failed",)
+
+
+# --- Results that would be wrong without an error ----------------------------------------
+
+
+def test_two_output_columns_with_the_same_name_are_blocked() -> None:
+    # Each result row is a dict: the second CLOSE_PRICE would silently replace the first.
+    sql = (f"SELECT a.trade_date, a.close_price, m.close_price FROM {ASSET} AS a "
+           f"JOIN {ASSET} AS m ON m.trade_date = a.trade_date")  # fmt: skip
+    result = GUARD.validate_and_rewrite(sql)
+
+    assert result.violations == ("duplicate_column",)
+    assert "CLOSE_PRICE" in result.error
+
+
+def test_aliases_make_the_same_column_twice_fine() -> None:
+    sql = (f"SELECT a.close_price AS btc_close, m.close_price AS eth_close FROM {ASSET} AS a "
+           f"JOIN {ASSET} AS m ON m.trade_date = a.trade_date")  # fmt: skip
+
+    assert GUARD.validate_and_rewrite(sql).is_valid
+
+
+def test_column_names_are_compared_like_snowflake_does_ignoring_case() -> None:
+    assert violations_of(f"SELECT close_price, CLOSE_PRICE FROM {ASSET}") == ("duplicate_column",)
+
+
+@pytest.mark.parametrize(
+    "sql",
+    [
+        f"WITH r AS (SELECT trade_date, daily_return FROM {ASSET} ORDER BY daily_return DESC) "
+        "SELECT trade_date, daily_return FROM r LIMIT 3",
+        f"SELECT symbol FROM {ASSET} LIMIT 5",
+        f"SELECT TOP 3 symbol FROM {ASSET}",
+    ],
+    ids=["order-only-inside-the-cte", "no-order-at-all", "top"],
+)
+def test_a_top_n_without_order_by_is_blocked(sql: str) -> None:
+    # Without ORDER BY in the same SELECT, which N rows come back is up to Snowflake.
+    assert violations_of(sql) == ("limit_without_order",)
+
+
+@pytest.mark.parametrize(
+    "sql",
+    [
+        f"SELECT symbol, close_price FROM {ASSET} LIMIT 100",
+        f"SELECT AVG(close_price) AS avg_close FROM {ASSET} LIMIT 1",
+    ],
+    ids=["limit-is-only-the-row-cap", "one-row-aggregate"],
+)
+def test_a_limit_that_cannot_pick_arbitrary_rows_is_fine(sql: str) -> None:
+    assert GUARD.validate_and_rewrite(sql).is_valid

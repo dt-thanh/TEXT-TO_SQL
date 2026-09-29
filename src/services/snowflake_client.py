@@ -13,6 +13,19 @@ from src.common.exceptions import WarehouseError
 logger = logging.getLogger(__name__)
 
 
+def refuse_duplicate_columns(description: Any) -> None:
+    """Rows come back as dicts keyed by column name: a second column with the same name would
+    silently replace the first. Refuse such a result instead of returning half of it."""
+
+    names = [column[0] for column in description or []]
+    duplicates = sorted({name for name in names if names.count(name) > 1})
+    if duplicates:
+        raise WarehouseError(
+            f"Query returned duplicate column names: {', '.join(duplicates)}. "
+            "Give every column a unique alias."
+        )
+
+
 class SnowflakeClient:
     """Narrow Snowflake access layer shared by ingestion, scripts, and the agent."""
 
@@ -68,6 +81,7 @@ class SnowflakeClient:
         with self.connect() as conn, conn.cursor(DictCursor) as cur:
             try:
                 cur.execute(sql, params)
+                refuse_duplicate_columns(cur.description)
                 return cur.fetchmany(max_rows) if max_rows else cur.fetchall()
             except SnowflakeDriverError as err:
                 raise WarehouseError(f"Query failed: {err}") from err

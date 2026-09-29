@@ -11,10 +11,11 @@ logger = logging.getLogger(__name__)
 
 
 def is_fixable_by_rewriting(error: str) -> bool:
-    """Compilation errors (unknown column, syntax, wrong argument types) are mistakes in the SQL
-    text, so a rewrite can fix them. A timeout, a lost connection or a missing privilege cannot."""
+    """Compilation errors (unknown column, syntax, wrong argument types) and duplicate column
+    names are mistakes in the SQL text, so a rewrite can fix them. A timeout, a lost connection
+    or a missing privilege cannot."""
 
-    return "SQL compilation error" in error
+    return "SQL compilation error" in error or "duplicate column names" in error
 
 
 def execute_sql(state: AgentState, *, warehouse: Any, max_rows: int) -> dict[str, Any]:
