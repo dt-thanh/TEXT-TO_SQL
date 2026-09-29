@@ -1,5 +1,7 @@
 # FinSight AI
 
+[![CI](https://github.com/dt-thanh/TEXT-TO_SQL/actions/workflows/ci.yml/badge.svg)](https://github.com/dt-thanh/TEXT-TO_SQL/actions/workflows/ci.yml)
+
 Nền tảng phân tích thị trường tài chính. Dữ liệu crypto (Binance) và vĩ mô (FRED) được nạp vào
 Snowflake, biến đổi bằng dbt, rồi người dùng hỏi bằng ngôn ngữ tự nhiên: hệ thống sinh, kiểm tra,
 chạy và **hiển thị SQL** cùng kết quả.
@@ -263,12 +265,26 @@ Snowflake ~2,3 s ít nhất hai lần và đọc lại metadata; 100% SQL qua gu
 holdout 6/6 [61–100%]). A/B 3 lần chạy mỗi cấu hình cho thấy ba luật thêm vào system prompt làm holdout tụt từ 26/27
 xuống 20/27; đã gỡ (commit `ffc42ec`). q14, q15, q16, q18 chuyển sang dev vì đã được dùng để quyết định thay đổi.
 
+## Kiểm tra tự động (CI)
+
+[.github/workflows/ci.yml](.github/workflows/ci.yml) chạy trên GitHub Actions mỗi lần push/pull request vào `main`,
+ba job song song, không cần khóa bí mật và không tốn tiền:
+
+- **python**: `ruff`, unit test (chạy được không cần mạng), `dbt parse` với thông tin kết nối giả;
+- **dags**: cài Airflow 3.3.2 (constraints chính thức) và parse `airflow/dags` như dag-processor
+  ([test_dag_integrity.py](tests/dags/test_dag_integrity.py): không lỗi import, đúng thứ tự task, không catchup);
+- **docker**: build image API/UI rồi chạy smoke test trong container (nạp semantic layer, prompt, gọi `/health`).
+
+Integration test và benchmark không chạy trong CI: cần khóa Snowflake/OpenAI và tốn tiền; chạy local (`make test`,
+`make eval`). Trước khi push: `make ci` chạy cùng các kiểm tra của job python.
+
 ## Lệnh
 
 ```bash
 make run              # chạy API (uvicorn, :8000)
 make test             # pytest: unit + integration (integration gọi Binance thật)
 make test-unit        # chỉ unit test, chạy offline được
+make ci               # lint + unit test + dbt parse: như CI, trước khi push
 make lint             # ruff
 make check-snowflake  # kiểm tra kết nối Snowflake
 make load-binance     # nạp incremental Binance → RAW

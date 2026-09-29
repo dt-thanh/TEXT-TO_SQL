@@ -10,19 +10,20 @@ from pathlib import Path
 
 import pytest
 
-# Ask for airflow.models, not airflow: the repository's own airflow/ folder (Dockerfile, dags/)
+# Ask for the submodule, not "airflow": the repository's own airflow/ folder (Dockerfile, dags/)
 # is importable as a namespace package named "airflow" even where Airflow is not installed.
 # An installed Airflow is a regular package and wins over that folder.
-pytest.importorskip("airflow.models.dagbag", reason="Apache Airflow is not installed here")
+pytest.importorskip("airflow.dag_processing.dagbag", reason="Apache Airflow is not installed here")
 
-from airflow.models.dagbag import DagBag  # noqa: E402  (only importable when Airflow is)
+# Airflow 3 location (airflow.models.dagbag is deprecated); example DAGs are no longer loaded.
+from airflow.dag_processing.dagbag import DagBag  # noqa: E402  (only importable when Airflow is)
 
 DAGS_FOLDER = Path(__file__).resolve().parents[2] / "airflow" / "dags"
 
 
 @pytest.fixture(scope="module")
 def dagbag() -> DagBag:
-    return DagBag(dag_folder=str(DAGS_FOLDER), include_examples=False)
+    return DagBag(dag_folder=str(DAGS_FOLDER))
 
 
 def test_every_dag_file_imports_without_errors(dagbag: DagBag) -> None:
