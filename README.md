@@ -221,15 +221,27 @@ cụm từ liền nhau) và tối đa 2 ví dụ chia sẻ ≥ một nửa khái
 
 ### Đánh giá (execution accuracy)
 
-[eval/gold_questions.jsonl](eval/gold_questions.jsonl): 11 câu hỏi chuẩn (Level 1–7 của spec §27 + 1 câu không trả lời
-được), mỗi câu có SQL đáp án đã kiểm chứng. Chấm bằng cách so **kết quả chạy**, không so chữ SQL.
+[eval/gold_questions.jsonl](eval/gold_questions.jsonl): câu hỏi chuẩn (Level 0–7 của spec §27), mỗi câu có SQL đáp án
+đã kiểm chứng. Chấm bằng cách so **kết quả chạy**, không so chữ SQL. Hai nhóm (`split`):
+
+- `dev` (q01–q11): đã nhìn khi xây agent, được phép chỉnh prompt/semantic layer theo chúng → điểm lạc quan.
+- `holdout` (q12 trở đi): viết trước khi agent thấy, **không bao giờ chỉnh hệ thống để sửa một câu holdout** (sửa
+  rồi thì câu đó chuyển sang `dev` và viết câu holdout mới) → điểm trung thực cho câu hỏi mới.
 
 ```bash
 make eval-gold                                          # chỉ chạy SQL đáp án: $0
-make eval                                               # chấm cả bộ: ~11 lần gọi LLM ≈ $0,004
+make eval                                               # chấm cả bộ: 1 lần gọi LLM/câu (+ sửa) ≈ $0,0005/câu
+make eval ARGS="--split holdout"                        # chỉ nhóm holdout
 make eval ARGS="--only q04 q10"                         # chấm lại vài câu
 make eval ARGS="--regrade eval/results/run_<...>.json"  # chấm lại SQL đã lưu: $0
 ```
+
+Thêm một câu hỏi: viết câu hỏi trước (tự nhiên, đừng nhìn danh sách từ đồng nghĩa trong `semantic/`), viết SQL đáp án
+và chạy thử (`make eval ARGS="--gold-only --only q22"`), tự kiểm tra con số bằng một cách tính khác, chỉ `SELECT`
+những cột quyết định đáp án (cột thừa ở câu trả lời của model được chấp nhận, cột thiếu thì không), ghi bẫy vào
+`notes`. `tests/unit/test_gold_questions.py` kiểm tra định dạng (tag hợp lệ, đúng một tag ngôn ngữ, SQL rỗng khi và
+chỉ khi câu có tag `unanswerable`/`adversarial`). Câu `unanswerable`/`adversarial` đạt khi không SQL nào được chạy
+(model từ chối, hoặc guard chặn).
 
 Baseline (2026-09-28, gpt-4o-mini, chưa có SQL guard / semantic layer / repair): **8/11 = 73%**, $0,0036.
 Sai: q04 (lọc trước window), q10 (sai định nghĩa volatility + lọc trước LAG), q11 (bịa mã TSLAUSDT).

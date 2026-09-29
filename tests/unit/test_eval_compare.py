@@ -1,14 +1,9 @@
 """Unit tests for result comparison (execution accuracy) and the gold question file."""
 
-import json
 from datetime import date
 from decimal import Decimal
-from pathlib import Path
 
 from src.evaluation.compare import results_match
-from src.semantic.layer import load_semantic_layer
-
-ROOT = Path(__file__).resolve().parents[2]
 
 
 def test_names_and_column_order_do_not_matter() -> None:
@@ -78,17 +73,3 @@ def test_values_must_sit_on_the_same_rows() -> None:
     swapped = [{"SYMBOL": "BTCUSDT", "R": 0.2}, {"SYMBOL": "ETHUSDT", "R": 0.1}]
 
     assert not results_match(expected, swapped).matched
-
-
-def test_gold_file_is_well_formed_and_does_not_leak_verified_examples() -> None:
-    gold_lines = (ROOT / "eval" / "gold_questions.jsonl").read_text(encoding="utf-8").splitlines()
-    gold = [json.loads(line) for line in gold_lines]
-    examples = load_semantic_layer().verified_queries
-    few_shot_questions = {ex.question.strip().lower() for ex in examples}
-
-    ids = [g["question_id"] for g in gold]
-    assert len(ids) == len(set(ids)), "question_id must be unique"
-    for g in gold:
-        assert {"question_id", "difficulty", "question", "expected_sql"} <= g.keys()
-        # A benchmark question the model saw as an example measures copying, not skill.
-        assert g["question"].strip().lower() not in few_shot_questions
