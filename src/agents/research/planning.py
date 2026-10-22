@@ -1,6 +1,6 @@
 """Ask the model for a research plan: which catalog metrics, with which parameters.
 
-The model sees the whole catalog (nine metrics, small enough to show every time), the data that
+The model sees the whole catalog (ten metrics, small enough to show every time), the data that
 exists and the dates. It answers in a strict JSON shape whose metric_id is an enum of the catalog,
 so it cannot name a metric that does not exist; parameters are checked later by catalog.resolve.
 """

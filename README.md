@@ -13,7 +13,7 @@ Research questions get a short report whose every number is traced to verified S
 The project has three parts, built to production habits rather than demo shortcuts:
 
 - **A data platform.** Binance (hourly candles for BTC, ETH, SOL, BNB since 2019), FRED (Fed
-  Funds rate, 10-year Treasury yield, with every revision) and DefiLlama (daily DeFi TVL of each
+  Funds rate, 10-year Treasury yield and CPI, with every revision) and DefiLlama (daily DeFi TVL of each
   asset's chain and of all chains) are loaded idempotently into Snowflake, modeled with dbt into
   point-in-time correct marts, and refreshed daily by Airflow.
 - **A Text-to-SQL agent (Quick SQL).** A LangGraph workflow writes SQL with an LLM, checks it
@@ -28,25 +28,26 @@ The project has three parts, built to production habits rather than demo shortcu
 Measured on 2026-10-22 with `gpt-4.1-mini`, graded by comparing **results**, not SQL text. Holdout
 questions were committed before the agent answered them and are never used to tune anything.
 
-| Quick SQL (`make eval`, 33 questions) | Value |
+| Quick SQL (`make eval`, 35 questions) | Value |
 |---|---|
-| Execution accuracy, all questions | 32/33 (97%, 95% CI 85–99%) |
-| Holdout questions | 14/14 (95% CI 78–100%) |
-| Generated SQL that passed the guard and ran | 29/29 |
-| Latency per question, as the user waits | p50 1.9 s, p95 2.9 s |
-| LLM cost per question | ~$0.0014 |
+| Execution accuracy, all questions | 35/35 (95% CI 90–100%) |
+| Holdout questions | 16/16 (95% CI 81–100%) |
+| Generated SQL that passed the guard and ran | 31/31 |
+| Latency per question, as the user waits | p50 1.9 s, p95 5.2 s |
+| LLM cost per question | ~$0.0017 |
 
-| Research mode (`make eval-research`, 19 questions) | Value |
+| Research mode (`make eval-research`, 21 questions) | Value |
 |---|---|
-| Questions answered correctly (right metrics, right values, grounded) | 19/19 (95% CI 83–100%) |
-| Holdout questions | 9/9 (95% CI 70–100%) |
-| Expected results reproduced exactly | 24/24 |
+| Questions answered correctly (right metrics, right values, grounded) | 21/21 (95% CI 85–100%) |
+| Holdout questions | 11/11 (95% CI 74–100%) |
+| Expected results reproduced exactly | 27/27 |
 | Must-decline questions declined (stocks, raw tables, stablecoins, forecasts) | 4/4 |
-| Latency per question | p50 3.3 s, p95 5.3 s |
-| LLM cost per question | ~$0.0016 |
+| Latency per question | p50 3.0 s, p95 4.0 s |
+| LLM cost per question | ~$0.0017 |
 
-Tests: 377 Python tests (unit, integration on Snowflake and the live APIs, DAG integrity), 97 dbt
-data tests, CI on every push.
+Tests: 381 Python tests (unit, integration on Snowflake and the live APIs, DAG integrity), 104 dbt
+data tests, CI on every push. A perfect score on a few dozen questions is not a perfect system: the
+intervals above are the honest reading.
 
 The benchmarks are small and the confidence intervals say so. Model choice and prompt changes are
 compared with repeated runs (see [Engineering notes](#engineering-notes)).
@@ -132,6 +133,11 @@ model then phrases findings, and a grounding check in plain code rejects any num
 in the evidence it cites (percent vs fraction, basis points, "billion"/"tỷ", English and
 Vietnamese number formats). Caveats that follow from the data, such as a 10-year yield FRED
 stopped publishing or retrospective TVL, are added by code.
+
+**Inflation as it was known.** CPI is published two weeks after each month and revised later.
+`mart_cpi_monthly` keeps every month as first published and computes its month-over-month and
+year-over-year change from the base months as they were known on the release day; each calendar
+day carries the newest month already published.
 
 **A revision history the source does not publish.** DefiLlama recomputes past TVL and keeps no
 vintages. Each daily load stores a value only when it is new or differs from the newest stored
@@ -237,16 +243,16 @@ infra/snowflake/ one-off SQL to create warehouse, roles and users
 
 ## Limitations and next steps
 
-- The benchmarks are small (33 Quick SQL and 19 research questions); the confidence intervals
+- The benchmarks are small (35 Quick SQL and 21 research questions); the confidence intervals
   say so, and a larger holdout set written by someone other than the builder is the next step.
 - The research grader checks metrics, values and grounding, not wording: a finding can carry only
   numbers from the evidence and still interpret them loosely. The evidence and its SQL are always
   shown next to the findings for that reason.
-- Research answers only what the nine catalog metrics compute; other questions are declined (or
+- Research answers only what the ten catalog metrics compute; other questions are declined (or
   asked in Quick SQL mode).
 - Quick SQL's repair loop fixes compilation errors, not wrong reasoning.
-- Inflation (CPI) is not loaded yet: FRED was in maintenance during the upgrade (see
-  [docs/research_copilot.md](docs/research_copilot.md)).
+- CPI is monthly and carried forward between releases; October 2025 was never published (US
+  government shutdown), so changes that need it are empty rather than estimated.
 - Single-turn questions only; follow-ups ("and for ETH?") would need conversation state.
 - The API has no authentication yet, so it is meant to run locally; auth and rate limiting come
   before any deployment.

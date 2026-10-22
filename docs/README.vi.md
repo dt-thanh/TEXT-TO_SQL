@@ -29,7 +29,7 @@ chạy và **hiển thị SQL** cùng kết quả.
 - Phase 8: FastAPI `POST /ask` + giao diện Streamlit (câu trả lời, biểu đồ, bảng, SQL luôn hiển thị, các lần sửa,
   chi phí), chạy local hoặc bằng Docker Compose.
 - Phase 9–10: benchmark (execution accuracy, dev/holdout, khoảng tin cậy Wilson) và CI GitHub Actions.
-- Nâng cấp Research Copilot (2026-10): TVL DeFi theo chain từ DefiLlama (tự lưu lịch sử sửa đổi bằng
+- Nâng cấp Research Copilot (2026-10): CPI từ FRED (giá trị công bố lần đầu, lạm phát đã biết theo từng ngày), TVL DeFi theo chain từ DefiLlama (tự lưu lịch sử sửa đổi bằng
   `fetched_date`), lợi suất 10 năm theo basis point, chế độ Research: model chỉ chọn metric đã kiểm chứng
   trong catalog, SQL lấy từ template, mọi con số trong kết luận được code đối chiếu với evidence
   (`POST /research`, tab Research, `make research Q="..."`). Chi tiết: [upgrade_baseline.md](upgrade_baseline.md),
@@ -271,10 +271,11 @@ Snowflake ~2,3 s ít nhất hai lần và đọc lại metadata; 100% SQL qua gu
 holdout 6/6 [61–100%]). A/B 3 lần chạy mỗi cấu hình cho thấy ba luật thêm vào system prompt làm holdout tụt từ 26/27
 xuống 20/27; đã gỡ (commit `ffc42ec`). q14, q15, q16, q18 chuyển sang dev vì đã được dùng để quyết định thay đổi.
 
-Sau nâng cấp Research Copilot (2026-10-22, gpt-4.1-mini): Quick SQL **32/33** (thêm 12 câu về TVL và basis
-point; holdout 14/14 [78–100%]), p50 1,9 s / p95 2,9 s, ~$0,0014/câu. Chế độ Research **19/19** (holdout 9/9
-[70–100%]): chọn đúng metric 15/15, đúng giá trị 24/24, mọi kết luận có bằng chứng 15/15, từ chối đúng 4/4;
-p50 3,3 s / p95 5,3 s, ~$0,0016/câu. Chi tiết: [research_copilot.md](research_copilot.md).
+Sau nâng cấp Research Copilot (2026-10-22, gpt-4.1-mini): Quick SQL **35/35** (thêm 14 câu về TVL, basis point
+và CPI; holdout 16/16 [81–100%]), p50 1,9 s / p95 5,2 s, ~$0,0017/câu. Chế độ Research **21/21** (holdout 11/11
+[74–100%]): chọn đúng metric 17/17, đúng giá trị 27/27, mọi kết luận có bằng chứng 17/17, từ chối đúng 4/4;
+p50 3,0 s / p95 4,0 s, ~$0,0017/câu. Bộ câu hỏi nhỏ nên phải đọc cùng khoảng tin cậy. Chi tiết:
+[research_copilot.md](research_copilot.md).
 
 ## Kiểm tra tự động (CI)
 
