@@ -9,7 +9,7 @@ AIRFLOW := AIRFLOW_UID=$$(id -u) docker compose -f airflow/docker-compose.yml
 
 .PHONY: install run ui app-up app-down ci test test-unit lint check-snowflake load-binance load-fred load-defillama \
 	dbt-deps dbt-build dbt-parse dbt-freshness dbt-docs airflow-up airflow-down airflow-check airflow-logs ask \
-	prompt eval eval-gold
+	prompt research eval eval-gold eval-research
 
 install:
 	$(PY) -m pip install -r requirements-dev.txt
@@ -89,6 +89,10 @@ airflow-logs:
 # Ask a question in plain language: make ask Q="BTC biến động thế nào tuần trước?"
 ask:
 	$(PY) -m scripts.ask "$(Q)"
+
+# Research question → Markdown report with evidence: make research Q="..." (~2-3 LLM calls).
+research:
+	$(PY) -m scripts.research "$(Q)"
 
 # Print what the model would read for Q (schema + semantic context): no LLM call, no cost.
 prompt:

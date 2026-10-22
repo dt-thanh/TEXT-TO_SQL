@@ -9,6 +9,15 @@
 # each other in the same order ("lợi suất 10 năm" matches "loi suat 10 nam"); each word may go
 # on ("return" matches "returns"). A one-word synonym needs 3+ characters: "ma" would match the
 # Vietnamese "mà", "má", "mã" once accents are removed.
+#
+# Research mode (src/agents/research) plans only with metrics that have a `template`: the model
+# picks the metric and its parameters, and the template, not the model, is the SQL that runs.
+# Template rules:
+# - {name} placeholders only for declared params; values are checked and quoted by code;
+# - one result row, upper-case column names in `outputs`, sample size in `sample_column`;
+# - window functions over the whole history first, date filters after;
+# - `golden_case`: parameters and values checked by an independent calculation
+#   (tests/integration/test_research_templates.py runs every golden case on Snowflake).
 
 metrics:
   - id: daily_return
@@ -51,6 +60,27 @@ metrics:
     pitfalls: >
       SUM(daily_return) is wrong and can even have the wrong sign (SOL, first half of 2025:
       -18.2% real, +2.2% summed).
+    sources: [binance]
+    pit_mode: as_known
+    params:
+      - {name: symbol, type: symbol, description: 'Asset pair, e.g. BTCUSDT.'}
+      - {name: start_date, type: date, description: First day of the period.}
+      - {name: end_date, type: date, description: Last day of the period.}
+    template: |
+      SELECT
+          EXP(SUM(log_return)) - 1 AS period_return,
+          COUNT(log_return) AS n_days
+      FROM FINSIGHT.MART.MART_ASSET_DAILY
+      WHERE symbol = {symbol}
+        AND trade_date BETWEEN {start_date} AND {end_date}
+    outputs:
+      - {column: PERIOD_RETURN, unit: fraction, description: Compounded return over the period.}
+      - {column: N_DAYS, unit: count, description: Days with a return in the period.}
+    sample_column: N_DAYS
+    min_observations: 2
+    golden_case:
+      params: {symbol: ETHUSDT, start_date: "2025-01-01", end_date: "2025-12-31"}
+      expected: {PERIOD_RETURN: -0.10969566598158, N_DAYS: 365}
 
   - id: annualized_volatility
     name: Annualized volatility of a period
@@ -72,6 +102,27 @@ metrics:
     pitfalls: >
       Never AVG(volatility_30d) for a period: volatility_30d is a rolling 30-day value per day.
       Use volatility_30d only when the question asks for the 30-day volatility on given days.
+    sources: [binance]
+    pit_mode: as_known
+    params:
+      - {name: symbol, type: symbol, description: 'Asset pair, e.g. BTCUSDT.'}
+      - {name: start_date, type: date, description: First day of the period.}
+      - {name: end_date, type: date, description: Last day of the period.}
+    template: |
+      SELECT
+          STDDEV_SAMP(log_return) * SQRT(365) AS annualized_volatility,
+          COUNT(log_return) AS n_days
+      FROM FINSIGHT.MART.MART_ASSET_DAILY
+      WHERE symbol = {symbol}
+        AND trade_date BETWEEN {start_date} AND {end_date}
+    outputs:
+      - {column: ANNUALIZED_VOLATILITY, unit: fraction_per_year, description: Annualized volatility.}
+      - {column: N_DAYS, unit: count, description: Daily returns used.}
+    sample_column: N_DAYS
+    min_observations: 20
+    golden_case:
+      params: {symbol: ETHUSDT, start_date: "2025-01-01", end_date: "2025-12-31"}
+      expected: {ANNUALIZED_VOLATILITY: 0.744413258426722, N_DAYS: 365}
 
   - id: volatility_30d
     name: 30-day rolling volatility
@@ -112,3 +163,362 @@ metrics:
     unit: USDT
     definition: Value traded. quote_volume is in USDT; base_volume counts coins.
     pitfalls: Compare assets with quote_volume; base_volume of BTC and SOL are different units.
+
+  - id: max_drawdown
+    name: Maximum drawdown
+    synonyms:
+      - drawdown
+      - max drawdown
+      - maximum drawdown
+      - peak to trough
+      - sụt giảm lớn nhất
+      - mức sụt giảm tối đa
+      - giảm từ đỉnh
+    sql: MIN(close_price / running peak of close_price - 1)
+    unit: fraction (-0.6 = the price fell 60% below its earlier peak)
+    definition: >
+      The largest fall from a previous peak within the period: for each day, close_price divided
+      by the highest close so far in the period, minus 1; the minimum of that.
+    pitfalls: >
+      The running peak is MAX(close_price) OVER (ORDER BY trade_date ROWS BETWEEN UNBOUNDED
+      PRECEDING AND CURRENT ROW) inside a CTE filtered to the period; a window function cannot be
+      nested inside MIN directly.
+    sources: [binance]
+    pit_mode: as_known
+    params:
+      - {name: symbol, type: symbol, description: 'Asset pair, e.g. BTCUSDT.'}
+      - {name: start_date, type: date, description: First day of the period.}
+      - {name: end_date, type: date, description: Last day of the period.}
+    template: |
+      WITH prices AS (
+          SELECT
+              close_price,
+              MAX(close_price) OVER (
+                  ORDER BY trade_date ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+              ) AS running_peak
+          FROM FINSIGHT.MART.MART_ASSET_DAILY
+          WHERE symbol = {symbol}
+            AND trade_date BETWEEN {start_date} AND {end_date}
+      )
+      SELECT
+          MIN(close_price / running_peak - 1) AS max_drawdown,
+          COUNT(*) AS n_days
+      FROM prices
+    outputs:
+      - {column: MAX_DRAWDOWN, unit: fraction, description: Largest fall below an earlier peak.}
+      - {column: N_DAYS, unit: count, description: Days in the period.}
+    sample_column: N_DAYS
+    min_observations: 2
+    golden_case:
+      params: {symbol: ETHUSDT, start_date: "2025-01-01", end_date: "2025-12-31"}
+      expected: {MAX_DRAWDOWN: -0.600425768484996, N_DAYS: 365}
+
+  - id: return_correlation
+    name: Correlation of two assets' daily returns
+    synonyms:
+      - correlation
+      - correlated
+      - move together
+      - tương quan
+      - đồng biến
+    sql: CORR(a.daily_return, b.daily_return) on the days both assets have a return
+    unit: ratio from -1 to 1
+    definition: >
+      Pearson correlation of the two assets' daily returns, joined on trade_date, over the days
+      where both have a return.
+    pitfalls: >
+      Correlate returns, never prices (two trending price series look correlated by accident).
+      Always report how many days were used.
+    sources: [binance]
+    pit_mode: as_known
+    params:
+      - {name: symbol_a, type: symbol, description: First asset pair.}
+      - {name: symbol_b, type: symbol, description: Second asset pair.}
+      - {name: start_date, type: date, description: First day of the period.}
+      - {name: end_date, type: date, description: Last day of the period.}
+    template: |
+      SELECT
+          CORR(a.daily_return, b.daily_return) AS return_correlation,
+          COUNT(*) AS n_days
+      FROM FINSIGHT.MART.MART_ASSET_DAILY AS a
+      JOIN FINSIGHT.MART.MART_ASSET_DAILY AS b
+          ON b.trade_date = a.trade_date
+      WHERE a.symbol = {symbol_a}
+        AND b.symbol = {symbol_b}
+        AND a.trade_date BETWEEN {start_date} AND {end_date}
+        AND a.daily_return IS NOT NULL
+        AND b.daily_return IS NOT NULL
+    outputs:
+      - {column: RETURN_CORRELATION, unit: ratio, description: Correlation of daily returns.}
+      - {column: N_DAYS, unit: count, description: Days both assets had a return.}
+    sample_column: N_DAYS
+    min_observations: 30
+    golden_case:
+      params: {symbol_a: BTCUSDT, symbol_b: ETHUSDT, start_date: "2025-01-01", end_date: "2025-12-31"}
+      expected: {RETURN_CORRELATION: 0.815578027405349, N_DAYS: 365}
+
+  - id: macro_rate_change
+    name: Change of US interest rates over a period
+    synonyms:
+      - rate change
+      - yield change
+      - basis points
+      - basis point
+      - bps
+      - điểm cơ bản
+      - thay đổi lãi suất
+      - thay đổi lợi suất
+    sql: (end value - start value) * 100 for basis points
+    unit: percent for levels, basis points for changes (4.10% to 4.20% is +10 bps)
+    definition: >
+      10-year Treasury yield and Fed Funds rate known on the first and last day of the period,
+      and the change of the 10-year yield in basis points.
+    pitfalls: >
+      A change from 4.10% to 4.20% is +10 basis points (+0.10 percentage points), not +10%.
+    sources: [fred]
+    pit_mode: as_known
+    params:
+      - {name: start_date, type: date, description: First day of the period.}
+      - {name: end_date, type: date, description: Last day of the period.}
+    template: |
+      SELECT
+          MIN_BY(treasury_10y, market_date) AS treasury_10y_start,
+          MAX_BY(treasury_10y, market_date) AS treasury_10y_end,
+          (MAX_BY(treasury_10y, market_date) - MIN_BY(treasury_10y, market_date)) * 100
+              AS treasury_10y_change_bps,
+          MIN_BY(fed_funds_rate, market_date) AS fed_funds_rate_start,
+          MAX_BY(fed_funds_rate, market_date) AS fed_funds_rate_end,
+          MAX_BY(treasury_10y_source_date, market_date) AS treasury_10y_end_source_date,
+          COUNT(*) AS n_days
+      FROM FINSIGHT.MART.MART_MACRO_DAILY
+      WHERE market_date BETWEEN {start_date} AND {end_date}
+    outputs:
+      - {column: TREASURY_10Y_START, unit: percent, description: 10-year yield known on the first day.}
+      - {column: TREASURY_10Y_END, unit: percent, description: 10-year yield known on the last day.}
+      - {column: TREASURY_10Y_CHANGE_BPS, unit: bps, description: Change of the 10-year yield.}
+      - {column: FED_FUNDS_RATE_START, unit: percent, description: Fed Funds rate on the first day.}
+      - {column: FED_FUNDS_RATE_END, unit: percent, description: Fed Funds rate on the last day.}
+      - {column: TREASURY_10Y_END_SOURCE_DATE, unit: date, description: Day the last known 10-year yield describes (older than the last day when FRED published nothing newer).}
+      - {column: N_DAYS, unit: count, description: Calendar days in the period.}
+    sample_column: N_DAYS
+    min_observations: 2
+    golden_case:
+      params: {start_date: "2025-01-01", end_date: "2025-12-31"}
+      expected:
+        TREASURY_10Y_START: 4.55
+        TREASURY_10Y_END: 4.14
+        TREASURY_10Y_CHANGE_BPS: -41
+        FED_FUNDS_RATE_START: 4.33
+        FED_FUNDS_RATE_END: 3.64
+        N_DAYS: 365
+
+  - id: tvl_change
+    name: Change of DeFi TVL over a period
+    synonyms:
+      - tvl
+      - total value locked
+      - defi tvl
+      - giá trị bị khóa
+      - tổng giá trị khóa
+    sql: TVL on the last day / TVL on the first day - 1 (MART_CHAIN_TVL_DAILY)
+    unit: USD for levels, fraction for the change
+    definition: >
+      DeFi total value locked on a chain (or "All" chains) on the first and last day of the
+      period, by DefiLlama's method (no liquid staking, no double counting).
+    pitfalls: >
+      TVL is not trading volume and not money flowing in. History before FinSight started loading
+      is retrospective: DefiLlama's current view of the past, not what was known then.
+    sources: [defillama]
+    pit_mode: retrospective
+    params:
+      - {name: chain, type: chain, description: 'DefiLlama chain: Ethereum, Solana, BSC, Bitcoin or All.'}
+      - {name: start_date, type: date, description: First day of the period.}
+      - {name: end_date, type: date, description: Last day of the period.}
+    template: |
+      SELECT
+          MIN_BY(tvl_usd, tvl_date) AS tvl_start,
+          MAX_BY(tvl_usd, tvl_date) AS tvl_end,
+          MAX_BY(tvl_usd, tvl_date) / MIN_BY(tvl_usd, tvl_date) - 1 AS tvl_change,
+          COUNT(*) AS n_days
+      FROM FINSIGHT.MART.MART_CHAIN_TVL_DAILY
+      WHERE chain = {chain}
+        AND tvl_date BETWEEN {start_date} AND {end_date}
+    outputs:
+      - {column: TVL_START, unit: usd, description: TVL on the first day.}
+      - {column: TVL_END, unit: usd, description: TVL on the last day.}
+      - {column: TVL_CHANGE, unit: fraction, description: Change of TVL over the period.}
+      - {column: N_DAYS, unit: count, description: Days with a TVL value.}
+    sample_column: N_DAYS
+    min_observations: 2
+    golden_case:
+      params: {chain: Ethereum, start_date: "2025-01-01", end_date: "2025-12-31"}
+      expected: {TVL_START: 65219324871, TVL_END: 67507914061, TVL_CHANGE: 0.0350906605, N_DAYS: 365}
+      tolerance: 0.01  # DefiLlama may recompute past TVL
+
+  - id: forward_return_after_yield_move
+    name: Asset return in the days after a move of the 10-year yield
+    synonyms:
+      - days after
+      - following days
+      - afterwards
+      - ngày tiếp theo
+      - ngày sau đó
+    sql: close N days later / close on the event day - 1, on days the yield moved
+    unit: fraction (0.05 = +5% over the horizon)
+    definition: >
+      Event study. An event is a day whose known 10-year yield changed by at least
+      min_change_bps basis points since the day before (a negative threshold means a fall of at
+      least that size). For each event day, the asset's return from that close to the close
+      horizon_days later. Compared with the same return measured from every day of the period.
+    pitfalls: >
+      Events closer together than the horizon share days, so the returns are not independent:
+      report the number of events and treat few events as weak evidence.
+    sources: [binance, fred]
+    pit_mode: as_known
+    params:
+      - {name: symbol, type: symbol, description: 'Asset pair, e.g. BTCUSDT.'}
+      - {name: min_change_bps, type: number, minimum: -100, maximum: 100, description: 'Yield move that counts as an event, in basis points: 10 = rose 10 bps or more, -10 = fell 10 bps or more.'}
+      - {name: horizon_days, type: integer, minimum: 1, maximum: 90, description: Days after the event over which the return is measured.}
+      - {name: start_date, type: date, description: First event day considered.}
+      - {name: end_date, type: date, description: Last event day considered.}
+    template: |
+      WITH days AS (
+          SELECT
+              trade_date,
+              close_price,
+              treasury_10y_change_bps,
+              LEAD(close_price, {horizon_days}) OVER (ORDER BY trade_date) AS close_after
+          FROM FINSIGHT.MART.MART_MARKET_MACRO_DAILY
+          WHERE symbol = {symbol}
+      ),
+      moves AS (
+          SELECT
+              close_after / close_price - 1 AS forward_return,
+              IFF(
+                  {min_change_bps} >= 0,
+                  treasury_10y_change_bps >= {min_change_bps},
+                  treasury_10y_change_bps <= {min_change_bps}
+              ) AS is_event
+          FROM days
+          WHERE trade_date BETWEEN {start_date} AND {end_date}
+            AND close_after IS NOT NULL
+      )
+      SELECT
+          COUNT_IF(is_event) AS n_events,
+          AVG(IFF(is_event, forward_return, NULL)) AS avg_return_after_events,
+          MEDIAN(IFF(is_event, forward_return, NULL)) AS median_return_after_events,
+          AVG(forward_return) AS avg_return_all_days,
+          COUNT(*) AS n_all_days
+      FROM moves
+    outputs:
+      - {column: N_EVENTS, unit: count, description: Days with a yield move of the given size.}
+      - {column: AVG_RETURN_AFTER_EVENTS, unit: fraction, description: Average return over the horizon after an event.}
+      - {column: MEDIAN_RETURN_AFTER_EVENTS, unit: fraction, description: Median return over the horizon after an event.}
+      - {column: AVG_RETURN_ALL_DAYS, unit: fraction, description: Average return over the horizon from any day (baseline).}
+      - {column: N_ALL_DAYS, unit: count, description: Days in the baseline.}
+    sample_column: N_EVENTS
+    min_observations: 3
+    golden_case:
+      params:
+        symbol: ETHUSDT
+        min_change_bps: "10"
+        horizon_days: "30"
+        start_date: "2025-01-01"
+        end_date: "2025-12-31"
+      expected:
+        N_EVENTS: 5
+        AVG_RETURN_AFTER_EVENTS: 0.173521428183267
+        MEDIAN_RETURN_AFTER_EVENTS: 0.0702717224439668
+        AVG_RETURN_ALL_DAYS: 0.0211269596416156
+        N_ALL_DAYS: 365
+
+  - id: volatility_when_tvl_falls
+    name: Asset volatility on days its chain's TVL had fallen
+    synonyms:
+      - tvl fell
+      - tvl falls
+      - tvl drop
+      - tvl giảm
+    sql: STDDEV_SAMP(log_return) * SQRT(365) split by chain_tvl_change_7d
+    unit: fraction per year
+    definition: >
+      Annualized volatility of the asset's daily log returns on days when the TVL of its own
+      chain was at least min_drop below its value 7 days earlier, next to the volatility on all
+      other days of the period.
+    pitfalls: >
+      Describes co-movement, not cause. TVL history before FinSight started loading is
+      retrospective. Few drop days make the first number unreliable.
+    sources: [binance, defillama]
+    pit_mode: retrospective
+    params:
+      - {name: symbol, type: symbol, description: 'Asset pair; its own chain is used (ETH: Ethereum, SOL: Solana, BNB: BSC, BTC: Bitcoin).'}
+      - {name: min_drop, type: number, minimum: 0, maximum: 1, description: 'Fall of 7-day TVL that counts, as a fraction: 0.1 = TVL 10% or more below its value a week earlier.'}
+      - {name: start_date, type: date, description: First day of the period.}
+      - {name: end_date, type: date, description: Last day of the period.}
+    template: |
+      SELECT
+          STDDEV_SAMP(IFF(chain_tvl_change_7d <= -{min_drop}, log_return, NULL)) * SQRT(365)
+              AS volatility_on_drop_days,
+          COUNT_IF(chain_tvl_change_7d <= -{min_drop} AND log_return IS NOT NULL) AS n_drop_days,
+          STDDEV_SAMP(IFF(chain_tvl_change_7d > -{min_drop}, log_return, NULL)) * SQRT(365)
+              AS volatility_on_other_days,
+          COUNT_IF(chain_tvl_change_7d > -{min_drop} AND log_return IS NOT NULL) AS n_other_days
+      FROM FINSIGHT.MART.MART_MARKET_MACRO_DAILY
+      WHERE symbol = {symbol}
+        AND trade_date BETWEEN {start_date} AND {end_date}
+    outputs:
+      - {column: VOLATILITY_ON_DROP_DAYS, unit: fraction_per_year, description: Annualized volatility on TVL drop days.}
+      - {column: N_DROP_DAYS, unit: count, description: TVL drop days with a return.}
+      - {column: VOLATILITY_ON_OTHER_DAYS, unit: fraction_per_year, description: Annualized volatility on the other days.}
+      - {column: N_OTHER_DAYS, unit: count, description: Other days with a return.}
+    sample_column: N_DROP_DAYS
+    min_observations: 10
+    golden_case:
+      params: {symbol: ETHUSDT, min_drop: "0.1", start_date: "2025-01-01", end_date: "2025-12-31"}
+      expected:
+        VOLATILITY_ON_DROP_DAYS: 0.988166173221344
+        N_DROP_DAYS: 22
+        VOLATILITY_ON_OTHER_DAYS: 0.720675767574771
+        N_OTHER_DAYS: 343
+      tolerance: 0.01  # depends on TVL, which DefiLlama may recompute
+
+  - id: return_tvl_correlation
+    name: Correlation of an asset's daily return with a chain's daily TVL change
+    synonyms:
+      - correlation with tvl
+      - tương quan với tvl
+    sql: CORR(daily_return, tvl_change_1d) joined on the day
+    unit: ratio from -1 to 1
+    definition: >
+      Pearson correlation of the asset's daily return with the 1-day change of a chain's TVL,
+      on the days both exist. TVL is measured at 00:00 UTC, so its 1-day change mostly covers
+      the day BEFORE the return's day.
+    pitfalls: Co-movement only, not cause. Report the number of days.
+    sources: [binance, defillama]
+    pit_mode: retrospective
+    params:
+      - {name: symbol, type: symbol, description: 'Asset pair, e.g. ETHUSDT.'}
+      - {name: chain, type: chain, description: 'DefiLlama chain: Ethereum, Solana, BSC, Bitcoin or All.'}
+      - {name: start_date, type: date, description: First day of the period.}
+      - {name: end_date, type: date, description: Last day of the period.}
+    template: |
+      SELECT
+          CORR(a.daily_return, t.tvl_change_1d) AS return_tvl_correlation,
+          COUNT(*) AS n_days
+      FROM FINSIGHT.MART.MART_ASSET_DAILY AS a
+      JOIN FINSIGHT.MART.MART_CHAIN_TVL_DAILY AS t
+          ON t.tvl_date = a.trade_date
+      WHERE a.symbol = {symbol}
+        AND t.chain = {chain}
+        AND a.trade_date BETWEEN {start_date} AND {end_date}
+        AND a.daily_return IS NOT NULL
+        AND t.tvl_change_1d IS NOT NULL
+    outputs:
+      - {column: RETURN_TVL_CORRELATION, unit: ratio, description: Correlation of daily return and TVL change.}
+      - {column: N_DAYS, unit: count, description: Days with both values.}
+    sample_column: N_DAYS
+    min_observations: 30
+    golden_case:
+      params: {symbol: ETHUSDT, chain: Ethereum, start_date: "2025-01-01", end_date: "2025-12-31"}
+      expected: {RETURN_TVL_CORRELATION: -0.0169276002402394, N_DAYS: 365}
+      tolerance: 0.02  # depends on TVL, which DefiLlama may recompute

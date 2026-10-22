@@ -4,11 +4,15 @@ The YAML files are data, edited by people. This module turns them into typed obj
 them when they are loaded, so a typo fails loudly here instead of silently giving the model a
 wrong or missing definition:
 - unknown keys are rejected (extra="forbid"): "pitfall:" instead of "pitfalls:" is an error;
-- concept ids are unique, and every verified query names concepts that exist.
+- concept ids are unique, and every verified query names concepts that exist;
+- a metric with a research `template` declares every parameter the template uses, the column
+  that holds its sample size, and the unit of every result column.
 """
 
+import string
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
 
 import yaml
 from pydantic import BaseModel, ConfigDict, ValidationError, model_validator
@@ -33,16 +37,62 @@ class MacroSeries(Strict):
     name: str
 
 
+class DefiChain(Strict):
+    chain: str  # DefiLlama slug as stored in MART_CHAIN_TVL_DAILY.chain
+    name: str
+    synonyms: list[str]
+
+
 class Coverage(Strict):
     """Everything the data contains. Always shown: it is how the model knows what to decline."""
 
     assets: list[Asset]
     macro_series: list[MacroSeries]
+    defi_chains: list[DefiChain] = []
     not_covered: str
 
 
+Unit = Literal["fraction", "fraction_per_year", "ratio", "count", "percent", "bps", "usd", "date"]
+
+
+class Param(Strict):
+    """One parameter of a research template. Values are checked before they reach SQL."""
+
+    name: str
+    type: Literal["symbol", "chain", "date", "number", "integer"]
+    description: str
+    minimum: float | None = None
+    maximum: float | None = None
+
+
+class Output(Strict):
+    """One result column of a research template."""
+
+    column: str  # as Snowflake returns it (upper case)
+    unit: Unit
+    description: str
+
+
+class GoldenCase(Strict):
+    """Parameters and the values the template must return for them (checked by hand)."""
+
+    params: dict[str, str]
+    expected: dict[str, float]
+    # Allowed difference: absolute for values below 1 in size (returns, correlations), relative
+    # above (prices, TVL), so one setting works for both. Raise it for data that may be revised.
+    tolerance: float = 1e-6
+
+    def matches(self, column: str, actual: float) -> bool:
+        expected = self.expected[column]
+        return abs(actual - expected) <= self.tolerance * max(1.0, abs(expected))
+
+
 class Concept(Strict):
-    """A metric (metrics.yml) or a glossary term (glossary.yml): shown when a synonym matches."""
+    """A metric (metrics.yml) or a glossary term (glossary.yml): shown when a synonym matches.
+
+    A metric with a `template` can also be used by research mode (src/agents/research): the
+    planner picks it with parameters and the template, not the model, writes the SQL.
+    """
 
     id: str
     name: str
@@ -51,6 +101,33 @@ class Concept(Strict):
     sql: str | None = None
     unit: str | None = None
     pitfalls: str | None = None
+    # Research mode only.
+    sources: list[Literal["binance", "fred", "defillama"]] = []
+    template: str | None = None
+    params: list[Param] = []
+    outputs: list[Output] = []
+    sample_column: str | None = None  # result column with the number of observations
+    min_observations: int = 1
+    pit_mode: Literal["as_known", "latest", "retrospective"] | None = None
+    golden_case: GoldenCase | None = None
+
+    @model_validator(mode="after")
+    def check_template(self) -> "Concept":
+        if self.template is None:
+            return self
+        used = {name for _, name, _, _ in string.Formatter().parse(self.template) if name}
+        declared = {p.name for p in self.params}
+        if used != declared:
+            message = f"template uses {sorted(used)}, declares {sorted(declared)}"
+            raise ValueError(f"{self.id}: {message}")
+        columns = {o.column for o in self.outputs}
+        if not self.outputs or self.sample_column not in columns:
+            raise ValueError(f"{self.id}: sample_column must be one of the declared outputs")
+        if not self.sources or self.pit_mode is None:
+            raise ValueError(f"{self.id}: a research metric needs sources and pit_mode")
+        if self.golden_case and set(self.golden_case.params) != declared:
+            raise ValueError(f"{self.id}: golden_case must give every parameter")
+        return self
 
 
 class VerifiedQuery(Strict):
@@ -70,6 +147,12 @@ class SemanticLayer(Strict):
     @property
     def concepts(self) -> list[Concept]:
         return [*self.metrics, *self.terms]
+
+    @property
+    def research_metrics(self) -> list[Concept]:
+        """Metrics research mode may plan with: the ones that carry a SQL template."""
+
+        return [m for m in self.metrics if m.template]
 
     @model_validator(mode="after")
     def check_ids(self) -> "SemanticLayer":

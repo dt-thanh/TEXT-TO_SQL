@@ -6,7 +6,7 @@ debug (the log says which words matched). Its limit: a paraphrase that no synony
 missed, which embeddings would catch. Revisit when the layer grows to hundreds of entries.
 
 What is shown:
-- coverage (assets, macro series, what is NOT in the data): always, it is small;
+- coverage (assets, macro series, DeFi chains, what is NOT in the data): always, it is small;
 - metrics and terms whose synonyms appear in the question;
 - up to MAX_EXAMPLES verified queries that share the most concepts with the question, and only
   when at least half of what the example demonstrates is in the question. A loosely related
@@ -95,6 +95,9 @@ def format_context(context: RetrievedContext) -> str:
         lines.append(f"- {asset.symbol}: {asset.name} ({', '.join(asset.synonyms)})")
     lines.append("Macro series (columns):")
     lines += [f"- {series.column}: {series.name}" for series in coverage.macro_series]
+    if coverage.defi_chains:
+        lines.append("DeFi TVL chains (MART_CHAIN_TVL_DAILY.chain; per asset: chain_tvl_usd):")
+        lines += [f"- {chain.chain}: {chain.name}" for chain in coverage.defi_chains]
     lines.append(f"Not in the data: {coverage.not_covered.strip()}")
 
     if context.matches:

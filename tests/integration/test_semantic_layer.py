@@ -3,6 +3,7 @@
 A definition the data contradicts is worse than none: the model follows it confidently. So:
 - the assets in glossary.yml are exactly the symbols in MART (a new asset must be added there);
 - the macro series named in glossary.yml are real MART columns;
+- the DeFi chains in glossary.yml are exactly the chains in MART_CHAIN_TVL_DAILY;
 - every verified query passes the SQL guard and returns rows. No LLM call.
 """
 
@@ -40,6 +41,12 @@ def test_glossary_macro_series_are_real_mart_columns(warehouse: SnowflakeClient)
     macro_columns = {r["COLUMN_NAME"] for r in rows if r["TABLE_NAME"] == "MART_MACRO_DAILY"}
 
     assert {s.column.upper() for s in LAYER.coverage.macro_series} <= macro_columns
+
+
+def test_glossary_defi_chains_are_exactly_the_chains_in_mart(warehouse: SnowflakeClient) -> None:
+    rows = warehouse.execute("SELECT DISTINCT chain FROM FINSIGHT.MART.MART_CHAIN_TVL_DAILY")
+
+    assert {row["CHAIN"] for row in rows} == {c.chain for c in LAYER.coverage.defi_chains}
 
 
 @pytest.mark.parametrize("example", LAYER.verified_queries, ids=lambda q: q.id)

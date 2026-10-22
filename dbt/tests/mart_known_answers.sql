@@ -1,5 +1,7 @@
 -- Known-answer test: values checked by hand against the source APIs must come out of the marts
 -- unchanged. Returns one row per check that is wrong OR missing (a missing row must not pass).
+-- Prices and published yields never change, so they must match exactly. DefiLlama may recompute
+-- past TVL, so TVL checks allow 1%: a bigger move is a real revision worth looking at.
 --
 --   BTC daily close 2024-01-01 = close of the 23:00 UTC candle: 44179.55
 --   DGS10 known on Sun 2024-12-22 = Thu 12-19 value 4.57, published Fri 12-20
@@ -11,16 +13,16 @@
 
 with expected as (
 
-    select check_name, expected_value
+    select check_name, expected_value, tolerance
     from (
         values
-            ('BTCUSDT daily close 2024-01-01', 44179.55),
-            ('DGS10 known on 2024-12-22',      4.57),
-            ('DGS10 known on 2024-12-23',      4.52),
-            ('Ethereum TVL 2024-01-01',        28456740243),
-            ('Ethereum TVL 7d change 2024-01-01', -0.008053),
-            ('ETHUSDT chain TVL 2024-01-01',   28456740243)
-    ) as t (check_name, expected_value)
+            ('BTCUSDT daily close 2024-01-01',    44179.55,    0),
+            ('DGS10 known on 2024-12-22',         4.57,        0),
+            ('DGS10 known on 2024-12-23',         4.52,        0),
+            ('Ethereum TVL 2024-01-01',           28456740243, 284567402),
+            ('Ethereum TVL 7d change 2024-01-01', -0.008053,   0.0001),
+            ('ETHUSDT chain TVL 2024-01-01',      28456740243, 284567402)
+    ) as t (check_name, expected_value, tolerance)
 
 ),
 
@@ -70,4 +72,4 @@ from expected
 left join actual
     on actual.check_name = expected.check_name
 where actual.actual_value is null
-   or actual.actual_value <> expected.expected_value
+   or abs(actual.actual_value - expected.expected_value) > expected.tolerance

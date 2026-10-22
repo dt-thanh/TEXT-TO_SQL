@@ -4,7 +4,8 @@
 # the data at all?), so it is ALWAYS in the prompt. `terms` are shown only when the question
 # uses one of their synonyms, like metrics.yml.
 #
-# Keep `assets` equal to the symbols in MART: tests/integration/test_semantic_layer.py checks it.
+# Keep `assets` equal to the symbols in MART and `defi_chains` equal to the chains in
+# MART_CHAIN_TVL_DAILY: tests/integration/test_semantic_layer.py checks both.
 
 coverage:
   assets:
@@ -25,9 +26,26 @@ coverage:
       name: Federal Funds Effective Rate (FRED DFF), percent
     - column: treasury_10y
       name: 10-year US Treasury yield (FRED DGS10), percent
+  defi_chains:
+    - chain: Ethereum
+      name: DeFi TVL on Ethereum (DefiLlama), USD
+      synonyms: [ethereum defi, ethereum tvl]
+    - chain: Solana
+      name: DeFi TVL on Solana (DefiLlama), USD
+      synonyms: [solana defi, solana tvl]
+    - chain: BSC
+      name: DeFi TVL on BNB Smart Chain (DefiLlama), USD
+      synonyms: [bsc, bnb chain, bnb smart chain]
+    - chain: Bitcoin
+      name: DeFi TVL on Bitcoin (DefiLlama), USD
+      synonyms: [bitcoin defi, bitcoin tvl]
+    - chain: All
+      name: DeFi TVL on all chains together (DefiLlama), USD
+      synonyms: [defi, all chains, toàn bộ defi]
   not_covered: >
     Stocks and shares, stock indexes, other crypto coins, forex, commodities, inflation (CPI),
-    unemployment, news and on-chain data.
+    unemployment, news, and on-chain data other than DeFi TVL (no transactions, addresses,
+    fees, stablecoin supply or single-protocol TVL).
 
 terms:
   - id: close_price
