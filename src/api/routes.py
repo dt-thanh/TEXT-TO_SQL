@@ -1,4 +1,4 @@
-"""HTTP endpoints: /health, and /ask which runs the Text-to-SQL agent.
+"""HTTP endpoints: /health, /ask (Text-to-SQL agent) and /research (research mode).
 
 The route only translates: HTTP request → answer_question() → JSON response. The agent does the
 work; the route never builds SQL or talks to Snowflake itself.
@@ -13,19 +13,28 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends
 
+from src.agents.research.report import to_markdown
+from src.agents.research.workflow import ResearchAnswer, answer_research
 from src.agents.text_to_sql import Answer, answer_question
-from src.models.schemas import AskRequest, AskResponse, Chart, HealthResponse
+from src.models.schemas import AskRequest, AskResponse, Chart, HealthResponse, ResearchResponse
 from src.services.chart_service import suggest_chart
 
 router = APIRouter()
 
 AnswerFn = Callable[[str], Answer]
+ResearchFn = Callable[[str], ResearchAnswer]
 
 
 def get_answer_fn() -> AnswerFn:
     """The agent, as a FastAPI dependency: tests swap it with app.dependency_overrides."""
 
     return answer_question
+
+
+def get_research_fn() -> ResearchFn:
+    """Research mode, as a FastAPI dependency: tests swap it with app.dependency_overrides."""
+
+    return answer_research
 
 
 def to_json_value(value: Any) -> Any:
@@ -78,3 +87,38 @@ def ask(payload: AskRequest, answer_fn: Annotated[AnswerFn, Depends(get_answer_f
     every other request until it returned."""
 
     return to_response(answer_fn(payload.question))
+
+
+def to_research_response(answer: ResearchAnswer) -> ResearchResponse:
+    plan = [
+        {"metric_id": step["metric_id"], "params": step["params"],
+         "status": step.get("status", "skipped"), "reason": step.get("reason")}
+        for step in answer.plan
+    ]  # fmt: skip
+    return ResearchResponse(
+        question=answer.question,
+        status=answer.status,
+        findings=answer.findings,
+        evidence=answer.evidence,
+        caveats=answer.caveats,
+        plan=plan,
+        decline_reason=answer.decline_reason,
+        analysis_window=list(answer.analysis_window) if answer.analysis_window else None,
+        data_as_of=answer.data_as_of,
+        usage=asdict(answer.usage),
+        llm_seconds=answer.llm_seconds,
+        sql_seconds=answer.sql_seconds,
+        total_seconds=answer.seconds,
+        report_markdown=to_markdown(answer),
+    )
+
+
+@router.post("/research", response_model=ResearchResponse)
+def research(
+    payload: AskRequest, research_fn: Annotated[ResearchFn, Depends(get_research_fn)]
+) -> ResearchResponse:
+    """Research mode: planned catalog metrics, verified SQL, findings grounded in the evidence.
+    A plain `def` for the same reason as /ask: the work blocks for seconds."""
+
+    return to_research_response(research_fn(payload.question))
+

@@ -69,3 +69,67 @@ class AskResponse(BaseModel):
     sql_seconds: float
     total_seconds: float  # the whole question, metadata lookup included
     data_as_of: date | None  # newest finished UTC day in the data: answers stop there
+
+
+class Finding(BaseModel):
+    claim: str
+    evidence_ids: list[str]
+
+
+class EvidenceValue(BaseModel):
+    column: str
+    value: float | str | None  # str for dates
+    unit: str
+    description: str
+
+
+class Evidence(BaseModel):
+    """One verified metric result: the SQL that produced it and its values."""
+
+    id: str
+    metric_id: str
+    metric_name: str
+    params: dict[str, str]
+    sql: str
+    sources: list[str]
+    data_window: str
+    n: int | None
+    values: list[EvidenceValue]
+    pit_mode: str | None
+    usable: bool  # False: too few observations, not used by the findings
+
+
+class PlanStep(BaseModel):
+    metric_id: str
+    params: dict[str, str]
+    status: str  # done | failed | insufficient_data | skipped
+    reason: str | None = None
+
+
+class ResearchResponse(BaseModel):
+    """A research answer. `status` is decided by code from what ran:
+
+    - complete: every planned metric ran with enough data and every finding is grounded;
+    - partial: a metric failed or was skipped, or a finding was dropped (a number not in the
+      evidence);
+    - insufficient_data: metrics ran but none had enough observations;
+    - declined: no catalog metric answers the question (`decline_reason` says why);
+    - error: nothing could run.
+    Every number in `findings` comes from `evidence`, whose SQL is included.
+    """
+
+    question: str
+    status: Literal["complete", "partial", "insufficient_data", "declined", "error"]
+    findings: list[Finding]
+    evidence: list[Evidence]
+    caveats: list[str]
+    plan: list[PlanStep]
+    decline_reason: str
+    analysis_window: list[str] | None  # [start, end]
+    data_as_of: date | None
+    usage: Usage
+    llm_seconds: float
+    sql_seconds: float
+    total_seconds: float
+    report_markdown: str
+

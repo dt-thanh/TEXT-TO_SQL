@@ -1,8 +1,11 @@
 """FinSight AI in the browser: ask a question, see the answer, chart, data and SQL (spec §26).
 
-A thin client. It calls the API's POST /ask and displays the response; it imports nothing from
-src/ and holds no Snowflake or OpenAI secret. The screen follows the spec top to bottom:
-ANSWER, CHART, RESULT DATA, GENERATED SQL, HOW THIS SQL WORKS. The SQL is never hidden.
+A thin client. It calls the API (POST /ask, POST /research) and displays the response; it imports
+nothing from src/ and holds no Snowflake or OpenAI secret. Two tabs:
+- Quick SQL follows the spec top to bottom: ANSWER, CHART, RESULT DATA, GENERATED SQL, HOW THIS
+  SQL WORKS. The SQL is never hidden.
+- Research shows a short report: findings, the evidence behind each (values and SQL), caveats,
+  and a Markdown download.
 
 Run: make run (the API) and, in a second terminal, make ui → http://localhost:8501
 """
@@ -26,10 +29,31 @@ EXAMPLES = [
 ]
 
 
-def ask_api(question: str) -> dict[str, Any]:
-    response = httpx.post(f"{API_URL}/ask", json={"question": question}, timeout=TIMEOUT_SECONDS)
+RESEARCH_EXAMPLES = [
+    "",
+    "Lập báo cáo ngắn cho 30 ngày gần nhất: lợi nhuận BTC và ETH, lợi suất 10 năm và TVL Ethereum.",
+    "When Ethereum TVL fell more than 10% in a week, was ETH more volatile than on other days?",
+    "Trong những ngày lợi suất 10 năm tăng từ 10 bps trở lên năm 2025, BTC và ETH ra sao "
+    "trong 30 ngày tiếp theo?",
+    "What was the correlation of BTC and ETH daily returns in 2025, and their max drawdowns?",
+]
+STATUS_STYLE = {
+    "complete": st.success,
+    "partial": st.warning,
+    "insufficient_data": st.warning,
+    "declined": st.info,
+    "error": st.error,
+}
+
+
+def call_api(path: str, question: str) -> dict[str, Any]:
+    response = httpx.post(f"{API_URL}{path}", json={"question": question}, timeout=TIMEOUT_SECONDS)
     response.raise_for_status()
     return response.json()
+
+
+def ask_api(question: str) -> dict[str, Any]:
+    return call_api("/ask", question)
 
 
 def format_value(value: Any) -> str:
@@ -110,35 +134,103 @@ def show(data: dict[str, Any]) -> None:
     show_details(data)
 
 
-st.set_page_config(page_title="FinSight AI", layout="wide")
-st.title("FinSight AI")
-st.caption(
-    "Ask about Bitcoin, Ethereum, Solana and BNB and the US macro backdrop (Fed Funds rate, "
-    "10-year Treasury yield). Every answer comes with the SQL that produced it."
-)
-st.selectbox("Example questions", EXAMPLES, key="example", on_change=use_example)
-question = st.text_area("Your question", key="question", max_chars=500)
+def run_pending(prefix: str, path: str) -> None:
+    """Call the API for the pending question of one tab, keep the result, redraw the screen.
 
-pending = st.session_state.get("pending")
-st.button("Ask", type="primary", on_click=submit, disabled=bool(pending))
+    Results live in session_state: Streamlit reruns this whole script on every interaction.
+    While `pending` is set the tab's button is drawn disabled, so impatient clicks cannot start
+    more paid calls for the same question.
+    """
 
-if pending:
-    # Results live in session_state: Streamlit reruns this whole script on every interaction.
-    with st.spinner("Reading the schema, writing SQL, checking it and running it on Snowflake..."):
-        st.session_state.pop("answer", None)
-        st.session_state.pop("problem", None)
+    pending = st.session_state.get(f"{prefix}pending")
+    if not pending:
+        return
+    with st.spinner("Working: reading the schema, running verified SQL on Snowflake..."):
+        st.session_state.pop(f"{prefix}answer", None)
+        st.session_state.pop(f"{prefix}problem", None)
         try:
-            st.session_state.answer = ask_api(pending)
+            st.session_state[f"{prefix}answer"] = call_api(path, pending)
         except httpx.HTTPStatusError as err:
-            st.session_state.problem = (
+            st.session_state[f"{prefix}problem"] = (
                 f"The API answered {err.response.status_code}: {err.response.text}"
             )
         except httpx.HTTPError:
-            st.session_state.problem = f"Cannot reach the API at {API_URL}. Is it up? (make run)"
-    del st.session_state.pending
-    st.rerun()  # draw the Ask button enabled again
+            message = f"Cannot reach the API at {API_URL}. Is it up? (make run)"
+            st.session_state[f"{prefix}problem"] = message
+    del st.session_state[f"{prefix}pending"]
+    st.rerun()  # draw the button enabled again
 
-if "problem" in st.session_state:
-    st.error(st.session_state.problem)
-if "answer" in st.session_state:
-    show(st.session_state.answer)
+
+def quick_sql_tab() -> None:
+    st.selectbox("Example questions", EXAMPLES, key="example", on_change=use_example)
+    st.text_area("Your question", key="question", max_chars=500)
+    pending = bool(st.session_state.get("pending"))
+    st.button("Ask", type="primary", on_click=submit, disabled=pending)
+    run_pending("", "/ask")
+    if "problem" in st.session_state:
+        st.error(st.session_state.problem)
+    if "answer" in st.session_state:
+        show(st.session_state.answer)
+
+
+def use_research_example() -> None:
+    if st.session_state.research_example:
+        st.session_state.research_question = st.session_state.research_example
+
+
+def submit_research() -> None:
+    if st.session_state.research_question.strip():
+        st.session_state.research_pending = st.session_state.research_question.strip()
+
+
+def show_research(data: dict[str, Any]) -> None:
+    window = data["analysis_window"]
+    period = f"Period {window[0]} to {window[1]} (UTC). " if window else ""
+    as_of = f"Data up to {data['data_as_of']} (UTC)." if data["data_as_of"] else ""
+    st.caption(period + as_of)
+    STATUS_STYLE[data["status"]](f"Status: {data['status']}")
+    if data["status"] == "declined":
+        st.write(data["decline_reason"])
+    # The report already lays out findings, evidence with SQL, and caveats; skip its title line.
+    report = data["report_markdown"]
+    st.markdown(report.split("\n", 1)[1] if report.startswith("# ") else report)
+    st.download_button(
+        "Download report (Markdown)",
+        data=report,
+        file_name="finsight_research.md",
+        mime="text/markdown",
+    )
+
+
+def research_tab() -> None:
+    st.caption(
+        "Multi-step questions across prices, US rates and DeFi TVL. The model only plans; every "
+        "number comes from verified SQL shown in the report."
+    )
+    st.selectbox(
+        "Example research questions",
+        RESEARCH_EXAMPLES,
+        key="research_example",
+        on_change=use_research_example,
+    )
+    st.text_area("Your research question", key="research_question", max_chars=500)
+    pending = bool(st.session_state.get("research_pending"))
+    st.button("Research", type="primary", on_click=submit_research, disabled=pending)
+    run_pending("research_", "/research")
+    if "research_problem" in st.session_state:
+        st.error(st.session_state.research_problem)
+    if "research_answer" in st.session_state:
+        show_research(st.session_state.research_answer)
+
+
+st.set_page_config(page_title="FinSight AI", layout="wide")
+st.title("FinSight AI")
+st.caption(
+    "Ask about Bitcoin, Ethereum, Solana and BNB, the US macro backdrop (Fed Funds rate, "
+    "10-year Treasury yield) and DeFi TVL. Every answer comes with the SQL that produced it."
+)
+quick_tab, research_tab_ = st.tabs(["Quick SQL", "Research"])
+with quick_tab:
+    quick_sql_tab()
+with research_tab_:
+    research_tab()
