@@ -156,17 +156,28 @@ def stale_days(item: dict[str, Any]) -> int | None:
     return days if days > STALE_MACRO_DAYS else None
 
 
+# Words that say nothing about what a caveat is about; ignored when comparing caveats.
+STOPWORDS = set(
+    "a an the of to in on for and or so is are was were be been this these that those it its "
+    "which may might can could not over with from by as at than more less there their "
+    "va la cua cac nhung mot nen co khong duoc cho voi tren trong nay do".split()
+)
+# Share of a caveat's content words found in a shown caveat above which it is a repeat.
+REPEAT_SHARE = 0.3
+
+
 def new_caveats(written: list[str], shown: list[str]) -> list[str]:
-    """The writer's caveats that do not repeat one already shown (same words, any language)."""
+    """The writer's caveats that do not repeat one already shown (same content words)."""
 
     def words(text: str) -> set[str]:
-        return set(normalize(text).split())
+        return set(normalize(text).split()) - STOPWORDS
 
     kept = []
     for caveat in written:
         mine = words(caveat)
         repeats = any(
-            len(mine & words(other)) >= 0.5 * min(len(mine), len(words(other))) for other in shown
+            len(mine & words(other)) >= REPEAT_SHARE * min(len(mine), len(words(other)))
+            for other in shown
         )
         if not repeats:
             kept.append(caveat)

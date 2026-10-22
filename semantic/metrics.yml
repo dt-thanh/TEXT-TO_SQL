@@ -413,7 +413,7 @@ metrics:
     outputs:
       - {column: N_EVENTS, unit: count, description: Days with a yield move of the given size.}
       - {column: AVG_RETURN_AFTER_EVENTS, unit: fraction, description: Average return over the horizon after an event.}
-      - {column: MEDIAN_RETURN_AFTER_EVENTS, unit: fraction, description: Median return over the horizon after an event.}
+      - {column: MEDIAN_RETURN_AFTER_EVENTS, unit: fraction, description: 'Median return over the horizon after an event: half of the events were at or below it and half at or above it.'}
       - {column: AVG_RETURN_ALL_DAYS, unit: fraction, description: Average return over the horizon from any day (baseline).}
       - {column: N_ALL_DAYS, unit: count, description: Days in the baseline.}
     sample_column: N_EVENTS

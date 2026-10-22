@@ -323,3 +323,26 @@ def test_report_values_are_shown_in_their_units(value: Any, unit: str, shown: st
     from src.agents.research.report import format_value
 
     assert format_value(value, unit) == shown
+
+
+def test_an_english_caveat_that_repeats_a_shown_one_with_other_words_is_dropped() -> None:
+    from src.agents.research.writing import new_caveats
+
+    shown = ["6 yield-move event(s): returns over overlapping windows are not independent, so a "
+             "few events are weak evidence."]  # fmt: skip
+    written = ["The sample size of 6 events is small, so these results provide weak evidence.",
+               "Returns are measured over overlapping windows, which may affect independence.",
+               "A 20 bps threshold could select different days."]  # fmt: skip
+
+    assert new_caveats(written, shown) == ["A 20 bps threshold could select different days."]
+
+
+def test_a_reworded_small_sample_caveat_is_a_repeat() -> None:
+    from src.agents.research.writing import new_caveats
+
+    shown = ["6 yield-move event(s): returns over overlapping windows are not independent, so a "
+             "few events are weak evidence."]  # fmt: skip
+    written = ["Only 6 event days were observed, so the results provide weak evidence and should "
+               "be interpreted cautiously."]  # fmt: skip
+
+    assert new_caveats(written, shown) == []

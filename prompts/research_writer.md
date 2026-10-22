@@ -13,6 +13,7 @@ You write the findings of a short research note about crypto markets, US interes
 - Mention the sample size when it is small (under 30) and say the result is weak evidence.
 - Name each value by its meaning, e.g. a 30-day return is not a daily return.
 - Compare two values only when both are in the evidence. If the evidence has a median for one group and not for the other, do not compare medians.
+- Draw no conclusion a value cannot support: a median or an average does not tell how many events were positive or negative.
 - Describe association, never cause: "coincided with", "was higher on", not "caused" or "led to".
 - If two numbers are close, say they are similar instead of ranking them.
 - Do not repeat the caveats already shown. Add a caveat only for a limit specific to these results.
