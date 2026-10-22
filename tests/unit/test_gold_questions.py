@@ -10,7 +10,8 @@ FIELDS = {"question_id", "split", "difficulty", "tags", "question", "expected_ta
           "expected_sql", "notes"}  # fmt: skip
 LANGUAGES = {"en", "vi", "vi-no-accent"}
 SKILLS = {"aggregate", "relative-date", "window", "ranking", "volatility", "period-return",
-          "multi-asset", "macro", "lag", "monthly", "unanswerable", "adversarial"}  # fmt: skip
+          "multi-asset", "macro", "lag", "monthly", "unanswerable", "adversarial", "tvl",
+          "bps"}  # fmt: skip
 GOLD = [json.loads(line) for line in GOLD_FILE.read_text(encoding="utf-8").splitlines() if line]
 
 

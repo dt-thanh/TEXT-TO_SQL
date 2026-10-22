@@ -102,6 +102,10 @@ prompt:
 eval:
 	$(PY) -m eval.run_eval $(ARGS)
 
+# Benchmark research mode (eval/research_questions.jsonl). ARGS="--gold-only" costs nothing.
+eval-research:
+	$(PY) -m eval.run_research_eval $(ARGS)
+
 # Only check that every gold SQL still runs: no LLM, no cost.
 eval-gold:
 	$(PY) -m eval.run_eval --gold-only
