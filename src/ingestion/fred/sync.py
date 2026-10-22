@@ -25,12 +25,21 @@ from src.ingestion.merge_loader import new_batch_id
 
 logger = logging.getLogger(__name__)
 
-MVP_SERIES = ("DFF", "DGS10")
+MVP_SERIES = ("DFF", "DGS10", "CPIAUCSL")
 # One month before the Binance backfill start, so that 2019-01-01 already has a value that
 # had been published by then (point-in-time lookups need the last value known on each day).
 BACKFILL_START = date(2018, 12, 1)
 # Re-read a week of publications on every incremental run; MERGE makes the overlap harmless.
 INCREMENTAL_LOOKBACK = timedelta(days=7)
+# A monthly series needs a year more: the year-over-year change of a 2019 month needs 2018, and a
+# monthly value is published only once, so it must be in the first window of the backfill.
+SERIES_BACKFILL_START = {"CPIAUCSL": date(2017, 1, 1)}
+
+
+def backfill_start(series_id: str) -> date:
+    """First observation date (and first publication date) loaded for this series."""
+
+    return SERIES_BACKFILL_START.get(series_id, BACKFILL_START)
 
 
 @dataclass(frozen=True)
@@ -43,11 +52,11 @@ class FredSyncResult:
     rows_updated: int
 
 
-def incremental_start(watermark: date | None) -> date:
+def incremental_start(watermark: date | None, series_id: str = "") -> date:
     """First publication date to ask for: all of history if RAW has nothing for the series."""
 
     if watermark is None:
-        return BACKFILL_START
+        return backfill_start(series_id)
     return watermark - INCREMENTAL_LOOKBACK
 
 
@@ -79,7 +88,8 @@ def load_vintages(
     windows = year_windows(realtime_start, today)
     received = inserted = updated = 0
     for window_start, window_end in windows:
-        changes = extract_changes(source, series_id, BACKFILL_START, window_start, window_end)
+        observation_start = backfill_start(series_id)
+        changes = extract_changes(source, series_id, observation_start, window_start, window_end)
         result = load_observations(conn, changes, new_batch_id())
         received += result.rows_received
         inserted += result.rows_inserted
@@ -112,7 +122,7 @@ def sync_series(
     """Incremental run for one series: from watermark minus lookback, or the backfill start."""
 
     watermark = get_watermark(conn, series_id)
-    start = incremental_start(watermark)
+    start = incremental_start(watermark, series_id)
     logger.info(
         "%s watermark=%s → loading publications from %s",
         series_id,

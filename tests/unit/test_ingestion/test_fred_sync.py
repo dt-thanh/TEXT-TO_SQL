@@ -26,6 +26,11 @@ def test_later_runs_reread_a_week_of_publications() -> None:
     assert incremental_start(date(2026, 9, 25)) == date(2026, 9, 25) - INCREMENTAL_LOOKBACK
 
 
+def test_a_monthly_series_backfills_a_year_more_for_year_over_year_changes() -> None:
+    assert incremental_start(None, "CPIAUCSL") == date(2017, 1, 1)
+    assert incremental_start(None, "DGS10") == BACKFILL_START
+
+
 class FakeCursor:
     def __init__(self) -> None:
         self.calls: list[tuple[str, dict[str, str]]] = []

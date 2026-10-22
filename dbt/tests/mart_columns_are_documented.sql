@@ -7,6 +7,7 @@
 -- depends_on: {{ ref('mart_macro_daily') }}
 -- depends_on: {{ ref('mart_chain_tvl_daily') }}
 -- depends_on: {{ ref('mart_market_macro_daily') }}
+-- depends_on: {{ ref('mart_cpi_monthly') }}
 
 select
     table_name,

@@ -63,3 +63,12 @@
 {% docs is_retrospective %}True when the value was not available the day after tvl_date (historical backfill or a later revision): it is DefiLlama's current view, not what was known then.{% enddocs %}
 
 {% docs fetched_date %}The day FinSight fetched the value shown.{% enddocs %}
+
+{% docs cpi_month %}The CPI month (first day of the month) whose figures are shown: the newest month already published on the row's day.{% enddocs %}
+
+{% docs cpi_release_date %}The day FRED published that CPI month for the first time; always on or before the row's day.{% enddocs %}
+
+{% docs cpi_yoy_change %}US inflation: CPI of cpi_month / CPI of the same month a year earlier - 1, as published (0.031 = 3.1% a year). Monthly; carried forward between releases.{% enddocs %}
+
+{% docs cpi_mom_change %}CPI of cpi_month / CPI of the month before - 1, as published (0.002 = +0.2% in the month).{% enddocs %}
+

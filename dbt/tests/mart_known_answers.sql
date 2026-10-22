@@ -10,6 +10,8 @@
 --   Ethereum DeFi TVL 2024-01-01 = 28,456,740,243 USD, 7-day change -0.008053
 --     (DefiLlama /v2/historicalChainTvl/Ethereum, read 2026-10-22; 2023-12-25 = 28,687,760,248)
 --   ETHUSDT row of 2024-01-01 carries that same chain TVL (the asset-to-chain join)
+--   CPI 2024-08 first published 2024-09-11 at 314.121 (later revised to 314.131, then 314.062):
+--   known on 2024-09-11, not on 2024-09-10 (the month known on 2024-09-10 is 2024-07)
 
 with expected as (
 
@@ -21,7 +23,10 @@ with expected as (
             ('DGS10 known on 2024-12-23',         4.52,        0),
             ('Ethereum TVL 2024-01-01',           28456740243, 284567402),
             ('Ethereum TVL 7d change 2024-01-01', -0.008053,   0.0001),
-            ('ETHUSDT chain TVL 2024-01-01',      28456740243, 284567402)
+            ('ETHUSDT chain TVL 2024-01-01',      28456740243, 284567402),
+            ('CPI 2024-08 as first published',    314.121,     0),
+            ('CPI month known on 2024-09-10',     202407,      0),
+            ('CPI month known on 2024-09-11',     202408,      0)
     ) as t (check_name, expected_value, tolerance)
 
 ),
@@ -61,6 +66,24 @@ actual as (
     select 'ETHUSDT chain TVL 2024-01-01', chain_tvl_usd
     from {{ ref('mart_market_macro_daily') }}
     where symbol = 'ETHUSDT' and trade_date = '2024-01-01'
+
+    union all
+
+    select 'CPI 2024-08 as first published', cpi_index
+    from {{ ref('mart_cpi_monthly') }}
+    where cpi_month = '2024-08-01'
+
+    union all
+
+    select 'CPI month known on 2024-09-10', year(cpi_month) * 100 + month(cpi_month)
+    from {{ ref('mart_macro_daily') }}
+    where market_date = '2024-09-10'
+
+    union all
+
+    select 'CPI month known on 2024-09-11', year(cpi_month) * 100 + month(cpi_month)
+    from {{ ref('mart_macro_daily') }}
+    where market_date = '2024-09-11'
 
 )
 

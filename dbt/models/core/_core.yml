@@ -4,7 +4,7 @@ version: 2
 
 models:
   - name: dim_date
-    description: Every calendar day from 2018-01-01 to one year after today, weekends included.
+    description: Every calendar day from 2017-01-01 to one year after today, weekends included.
     data_tests:
       - dbt_utils.expression_is_true:
           name: dim_date_weekend_flag_matches_weekday

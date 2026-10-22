@@ -26,6 +26,8 @@ coverage:
       name: Federal Funds Effective Rate (FRED DFF), percent
     - column: treasury_10y
       name: 10-year US Treasury yield (FRED DGS10), percent
+    - column: cpi_yoy_change
+      name: US CPI inflation, year over year, of the newest published month (FRED CPIAUCSL), fraction
   defi_chains:
     - chain: Ethereum
       name: DeFi TVL on Ethereum (DefiLlama), USD
@@ -43,8 +45,8 @@ coverage:
       name: DeFi TVL on all chains together (DefiLlama), USD
       synonyms: [defi, all chains, toàn bộ defi]
   not_covered: >
-    Stocks and shares, stock indexes, other crypto coins, forex, commodities, inflation (CPI),
-    unemployment, news, and on-chain data other than DeFi TVL (no transactions, addresses,
+    Stocks and shares, stock indexes, other crypto coins, forex, commodities, unemployment,
+    inflation measures other than headline CPI, news, and on-chain data other than DeFi TVL (no transactions, addresses,
     fees, stablecoin supply or single-protocol TVL).
 
 terms:

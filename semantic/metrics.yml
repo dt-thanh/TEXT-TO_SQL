@@ -522,3 +522,54 @@ metrics:
       params: {symbol: ETHUSDT, chain: Ethereum, start_date: "2025-01-01", end_date: "2025-12-31"}
       expected: {RETURN_TVL_CORRELATION: -0.0169276002402394, N_DAYS: 365}
       tolerance: 0.02  # depends on TVL, which DefiLlama may recompute
+
+  - id: inflation_change
+    name: US CPI inflation known at the start and the end of a period
+    synonyms:
+      - inflation
+      - cpi
+      - consumer prices
+      - lạm phát
+      - chỉ số giá tiêu dùng
+    sql: cpi_yoy_change (year-over-year, as published) on the first and last day
+    unit: fraction (0.027 = 2.7% a year); the change in percentage points
+    definition: >
+      Year-over-year CPI inflation of the newest month already published on the first and on the
+      last day of the period (values as first published), the change between them in percentage
+      points, and how many monthly releases fell in the period.
+    pitfalls: >
+      CPI is monthly and published about two weeks after the month: a day carries the last
+      published month, not the current one. October 2025 was never published (US government
+      shutdown). A change of inflation is in percentage points, not percent.
+    sources: [fred]
+    pit_mode: as_known
+    params:
+      - {name: start_date, type: date, description: First day of the period.}
+      - {name: end_date, type: date, description: Last day of the period.}
+    template: |
+      SELECT
+          MIN_BY(cpi_yoy_change, market_date) AS cpi_yoy_start,
+          MAX_BY(cpi_yoy_change, market_date) AS cpi_yoy_end,
+          (MAX_BY(cpi_yoy_change, market_date) - MIN_BY(cpi_yoy_change, market_date)) * 100
+              AS cpi_yoy_change_points,
+          MIN_BY(cpi_month, market_date) AS cpi_month_start,
+          MAX_BY(cpi_month, market_date) AS cpi_month_end,
+          COUNT(DISTINCT cpi_month) AS n_releases
+      FROM FINSIGHT.MART.MART_MACRO_DAILY
+      WHERE market_date BETWEEN {start_date} AND {end_date}
+    outputs:
+      - {column: CPI_YOY_START, unit: fraction, description: Year-over-year CPI inflation known on the first day.}
+      - {column: CPI_YOY_END, unit: fraction, description: Year-over-year CPI inflation known on the last day.}
+      - {column: CPI_YOY_CHANGE_POINTS, unit: percent, description: Change of inflation over the period in percentage points.}
+      - {column: CPI_MONTH_START, unit: date, description: CPI month the first value describes.}
+      - {column: CPI_MONTH_END, unit: date, description: CPI month the last value describes.}
+      - {column: N_RELEASES, unit: count, description: CPI months published and known during the period.}
+    sample_column: N_RELEASES
+    min_observations: 2
+    golden_case:
+      params: {start_date: "2025-01-01", end_date: "2025-12-31"}
+      expected:
+        CPI_YOY_START: 0.027325792795
+        CPI_YOY_END: 0.027119693853
+        CPI_YOY_CHANGE_POINTS: -0.0206098942
+        N_RELEASES: 12

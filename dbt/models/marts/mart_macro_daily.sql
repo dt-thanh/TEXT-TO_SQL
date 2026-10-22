@@ -53,6 +53,28 @@ latest_known as (
         order by known_values.observation_date desc
     ) = 1
 
+),
+
+-- CPI: the newest month already published on the day, with its changes as published
+-- (mart_cpi_monthly). Between releases the same month is carried forward for about 30 days.
+cpi_known as (
+
+    select
+        calendar.market_date,
+        cpi.cpi_month,
+        cpi.release_date,
+        cpi.cpi_yoy_change,
+        cpi.cpi_mom_change
+    from calendar
+    join {{ ref('mart_cpi_monthly') }} as cpi
+        on  cpi.release_date <= calendar.market_date
+        and cpi.cpi_index is not null
+    -- Two months can share a release date (2025-12-18: October, empty, and November): the
+    -- newest month wins.
+    qualify row_number() over (
+        partition by calendar.market_date order by cpi.release_date desc, cpi.cpi_month desc
+    ) = 1
+
 )
 
 select
@@ -72,7 +94,12 @@ select
     -- Change of the KNOWN yield since the previous calendar day, in basis points (4.10% → 4.20%
     -- is +10 bps, not +10%). 0 on weekends and holidays: nothing new was published.
     (t10.value - lag(t10.value) over (order by calendar.market_date)) * 100
-                                                            as treasury_10y_change_bps
+                                                            as treasury_10y_change_bps,
+
+    cpi.cpi_month,
+    cpi.release_date                                        as cpi_release_date,
+    cpi.cpi_yoy_change,
+    cpi.cpi_mom_change
 
 from calendar
 left join latest_known as fed
@@ -81,3 +108,5 @@ left join latest_known as fed
 left join latest_known as t10
     on  t10.market_date = calendar.market_date
     and t10.indicator_id = 'TREASURY_10Y'
+left join cpi_known as cpi
+    on cpi.market_date = calendar.market_date

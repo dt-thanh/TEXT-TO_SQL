@@ -21,6 +21,8 @@ select
     macro.treasury_10y,
     macro.treasury_10y_source_date,
     macro.treasury_10y_change_bps,
+    macro.cpi_month,
+    macro.cpi_yoy_change,
 
     chain_tvl.chain                  as chain,
     chain_tvl.tvl_usd                as chain_tvl_usd,
