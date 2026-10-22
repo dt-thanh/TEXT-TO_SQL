@@ -85,11 +85,13 @@ def merge_rows(
     batch_id: str,
     target_table: str | None = None,
     batch_rows: int = INSERT_BATCH_ROWS,
+    merge_sql: str | None = None,
 ) -> LoadResult:
     """Upsert `rows` (tuples in spec.columns order) into the target table.
 
     If anything fails before the MERGE, the target is untouched: the stage table is
-    TEMPORARY and disappears with the session.
+    TEMPORARY and disappears with the session. `merge_sql` replaces the default MERGE for a
+    table with its own rule (it must read spec.stage_table and return inserted, updated).
     """
 
     target = target_table or spec.target_table
@@ -105,7 +107,7 @@ def merge_rows(
             cur.execute(f"CREATE OR REPLACE TEMPORARY TABLE {spec.stage_table} LIKE {target}")
             for start in range(0, len(rows), batch_rows):
                 cur.executemany(insert_sql, list(rows[start : start + batch_rows]))
-            cur.execute(build_merge_sql(spec, target))
+            cur.execute(merge_sql or build_merge_sql(spec, target))
             inserted, updated = cur.fetchone()
     except SnowflakeDriverError as err:
         raise WarehouseError(f"Loading batch {batch_id} into {target} failed: {err}") from err

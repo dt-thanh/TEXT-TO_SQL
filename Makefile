@@ -7,7 +7,7 @@ DBT := set -a && . ./.env && set +a && cd dbt && ../.venv/bin/dbt
 # run as you, so files they write into the repo stay yours.
 AIRFLOW := AIRFLOW_UID=$$(id -u) docker compose -f airflow/docker-compose.yml
 
-.PHONY: install run ui app-up app-down ci test test-unit lint check-snowflake load-binance load-fred \
+.PHONY: install run ui app-up app-down ci test test-unit lint check-snowflake load-binance load-fred load-defillama \
 	dbt-deps dbt-build dbt-parse dbt-freshness dbt-docs airflow-up airflow-down airflow-check airflow-logs ask \
 	prompt eval eval-gold
 
@@ -46,6 +46,9 @@ load-binance:
 
 load-fred:
 	$(PY) -m scripts.load_fred
+
+load-defillama:
+	$(PY) -m scripts.load_defillama
 
 dbt-deps:
 	$(DBT) deps

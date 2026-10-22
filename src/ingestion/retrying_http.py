@@ -42,7 +42,7 @@ def get_json(
     sleep: Callable[[float], None],
     secrets: tuple[str, ...] = (),
 ) -> Any:
-    """GET `path` and return the JSON body, retrying network errors, 429 and 5xx.
+    """GET `path` and return the JSON body, retrying network errors, 429, 5xx and non-JSON 200s.
 
     Error messages end up in logs, so they never contain the request URL (it carries the
     query string, API key included), and every value in `secrets` is masked as ***.
@@ -62,16 +62,24 @@ def get_json(
             problem, wait = f"network error: {masked(str(err))}", backoff_seconds(attempt)
         else:
             if response.status_code == 200:
-                return response.json()
-            if response.status_code not in RETRYABLE_STATUS:
+                try:
+                    return response.json()
+                except ValueError:
+                    # A maintenance page served with 200 (seen on FRED, 2026-10) is temporary:
+                    # retry it like a 5xx instead of crashing with a raw JSONDecodeError.
+                    content_type = response.headers.get("content-type", "unknown")
+                    problem = f"HTTP 200 without JSON (content-type {content_type})"
+                    wait = backoff_seconds(attempt)
+            elif response.status_code in RETRYABLE_STATUS:
+                problem = f"HTTP {response.status_code}"
+                wait = retry_after_seconds(response) or backoff_seconds(attempt)
+            else:
                 raise SourceAPIError(
                     masked(
                         f"{source} {path} returned HTTP {response.status_code}: "
                         f"{response.text[:200]}"
                     )
                 )
-            problem = f"HTTP {response.status_code}"
-            wait = retry_after_seconds(response) or backoff_seconds(attempt)
 
         if attempt < max_attempts:
             logger.warning(

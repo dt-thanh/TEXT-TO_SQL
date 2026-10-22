@@ -39,6 +39,7 @@ def test_the_daily_pipeline_runs_its_steps_in_order(dagbag: DagBag) -> None:
     assert downstream == {
         "load_binance": ["check_source_freshness"],
         "load_fred": ["check_source_freshness"],
+        "load_defillama": ["check_source_freshness"],
         "check_source_freshness": ["dbt_build_staging"],
         "dbt_build_staging": ["dbt_build_core"],
         "dbt_build_core": ["dbt_build_marts"],

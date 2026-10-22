@@ -1,8 +1,8 @@
 """FinSight daily pipeline: load new source data into RAW, then rebuild STAGING → CORE → MART.
 
 Airflow only decides WHEN each step runs, in WHAT ORDER, and what to do on failure. Every step
-is a command that already works by hand (make load-binance, make load-fred, make dbt-build), so
-the business logic stays in src/ and dbt/, not in this file (spec §15).
+is a command that already works by hand (make load-binance, make load-fred, make load-defillama,
+make dbt-build), so the business logic stays in src/ and dbt/, not in this file (spec §15).
 """
 
 from datetime import UTC, datetime, timedelta
@@ -32,7 +32,7 @@ default_args = {
 
 with DAG(
     dag_id="finsight_daily",
-    description="Binance + FRED → RAW, then dbt STAGING → CORE → MART",
+    description="Binance + FRED + DefiLlama → RAW, then dbt STAGING → CORE → MART",
     # 00:30 UTC: the UTC day has just closed, so yesterday's last hourly candle is final.
     schedule="30 0 * * *",
     start_date=datetime(2026, 9, 1, tzinfo=UTC),
@@ -52,6 +52,11 @@ with DAG(
     load_fred = BashOperator(
         task_id="load_fred",
         bash_command=f"cd {PROJECT_DIR} && {VENV}/python -m scripts.load_fred",
+    )
+
+    load_defillama = BashOperator(
+        task_id="load_defillama",
+        bash_command=f"cd {PROJECT_DIR} && {VENV}/python -m scripts.load_defillama",
     )
 
     # A load can "succeed" with nothing new (an API that stopped updating, a stuck watermark).
@@ -80,6 +85,7 @@ with DAG(
         bash_command=dbt("build --select path:models/marts"),
     )
 
-    # Both loads can run at the same time (different sources, different RAW tables);
-    # the freshness check waits for both, then the layers go bottom-up.
-    [load_binance, load_fred] >> check_freshness >> dbt_staging >> dbt_core >> dbt_marts
+    # The loads can run at the same time (different sources, different RAW tables);
+    # the freshness check waits for all of them, then the layers go bottom-up.
+    loads = [load_binance, load_fred, load_defillama]
+    loads >> check_freshness >> dbt_staging >> dbt_core >> dbt_marts

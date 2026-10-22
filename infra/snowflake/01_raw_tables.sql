@@ -71,3 +71,23 @@ CREATE TABLE IF NOT EXISTS FINSIGHT.RAW.RAW_FRED_OBSERVATION (
     CONSTRAINT pk_raw_fred_observation PRIMARY KEY (series_id, observation_date, realtime_start)
 )
 COMMENT = 'FRED observations, one row per value per vintage (value_raw "." = no value that day)';
+
+-- Grain: one chain + one TVL day + one fetch day. DefiLlama publishes no revision history and may
+-- recompute past days, so the loader stores a value only when it is new or differs from the newest
+-- one already stored: the table is its own vintage history (fetched_date plays the role FRED's
+-- realtime_start plays). The first load of a chain is a backfill (is_backfill = TRUE): those values
+-- were fetched long after the day they describe and must not be read as "known at the time".
+CREATE TABLE IF NOT EXISTS FINSIGHT.RAW.RAW_DEFILLAMA_CHAIN_TVL (
+    chain                     VARCHAR(50)     NOT NULL,
+    tvl_date                  DATE            NOT NULL,
+    fetched_date              DATE            NOT NULL,
+
+    tvl_usd                   NUMBER(38,2)    NOT NULL,
+    is_backfill               BOOLEAN         NOT NULL,
+
+    ingested_at               TIMESTAMP_TZ(3),
+    batch_id                  VARCHAR(100),
+
+    CONSTRAINT pk_raw_defillama_chain_tvl PRIMARY KEY (chain, tvl_date, fetched_date)
+)
+COMMENT = 'DefiLlama daily TVL per chain (USD, excludes liquid staking and double counting), one row per value per fetch that changed it';
