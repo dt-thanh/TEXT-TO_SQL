@@ -99,3 +99,40 @@ models:
         description: Last day this vintage was the latest known value (9999-12-31 = still current).
       - name: value
         description: Numeric value; NULL when FRED had no value that day (value_raw = ".").
+
+  - name: stg_defillama_chain_tvl
+    description: >
+      DefiLlama TVL per chain and day, one row per version. A version is the latest value
+      DefiLlama gave for tvl_date from fetched_date through valid_to.
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [chain, tvl_date, fetched_date]
+      - dbt_utils.expression_is_true:
+          name: defillama_values_are_fetched_after_their_day
+          arguments:
+            expression: "fetched_date > tvl_date"
+      - dbt_utils.expression_is_true:
+          name: defillama_tvl_is_positive
+          arguments:
+            expression: "tvl_usd > 0"
+      - dbt_utils.expression_is_true:
+          name: defillama_version_periods_are_ordered
+          arguments:
+            expression: "valid_to >= fetched_date"
+    columns:
+      - name: chain
+        description: DefiLlama chain slug, e.g. Ethereum; "All" is every chain together.
+        data_tests: [not_null]
+      - name: tvl_date
+        description: The UTC day the TVL describes (DefiLlama's 00:00 UTC point).
+        data_tests: [not_null]
+      - name: fetched_date
+        description: The UTC day our pipeline fetched this value.
+        data_tests: [not_null]
+      - name: tvl_usd
+        description: Total value locked in USD, DefiLlama method (no liquid staking, no double counting).
+        data_tests: [not_null]
+      - name: is_backfill
+        description: True when the value came from the first, historical load of the chain.
+

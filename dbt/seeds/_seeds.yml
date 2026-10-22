@@ -23,3 +23,16 @@ seeds:
         description: Stable business id, e.g. TREASURY_10Y. Code and questions use this, not the FRED code.
       - name: series_id
         description: FRED series code, e.g. DGS10.
+
+  - name: defillama_chains
+    description: >
+      The DefiLlama chains FinSight loads (src/ingestion/defillama/sync.py MVP_CHAINS), and the
+      asset each chain belongs to. related_symbol is empty for "All" (DeFi as a whole).
+    columns:
+      - name: chain_id
+        description: Stable business id, e.g. ETHEREUM.
+      - name: chain_slug
+        description: DefiLlama chain slug, e.g. Ethereum. Must match RAW_DEFILLAMA_CHAIN_TVL.chain.
+      - name: related_symbol
+        description: Binance pair of the chain's native asset, e.g. ETHUSDT.
+

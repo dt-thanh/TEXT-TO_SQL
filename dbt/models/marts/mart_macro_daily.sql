@@ -68,7 +68,11 @@ select
     t10.source_date                                         as treasury_10y_source_date,
     t10.available_date                                      as treasury_10y_available_date,
     datediff('day', t10.source_date, calendar.market_date)  as treasury_10y_days_since_observation,
-    t10.available_date < calendar.market_date               as treasury_10y_is_carried_forward
+    t10.available_date < calendar.market_date               as treasury_10y_is_carried_forward,
+    -- Change of the KNOWN yield since the previous calendar day, in basis points (4.10% → 4.20%
+    -- is +10 bps, not +10%). 0 on weekends and holidays: nothing new was published.
+    (t10.value - lag(t10.value) over (order by calendar.market_date)) * 100
+                                                            as treasury_10y_change_bps
 
 from calendar
 left join latest_known as fed

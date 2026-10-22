@@ -1,5 +1,7 @@
 # Documentation and tests for MART (spec §11). These descriptions are also what the Text-to-SQL
 # agent reads (persist_docs → Snowflake COMMENTs), so they say what each metric MEANS.
+# Every column is described; shared wording lives once in _docs.md ({{ doc('...') }}), and
+# dbt/tests/mart_columns_are_documented.sql fails the build if a MART column has no comment.
 version: 2
 
 models:
@@ -25,7 +27,7 @@ models:
             expression: "volatility_30d >= 0"
     columns:
       - name: trade_date
-        description: UTC calendar day.
+        description: "{{ doc('trade_date') }}"
         data_tests:
           - not_null
           # No missing day per asset, so "previous row" in the return formula is "previous day".
@@ -35,27 +37,38 @@ models:
                 datepart: day
                 group_by_columns: [symbol]
       - name: symbol
-        description: Binance pair, e.g. BTCUSDT.
+        description: "{{ doc('symbol') }}"
         data_tests:
           - not_null
           - relationships:
               arguments:
                 to: ref('dim_asset')
                 field: symbol
+      - name: open_price
+        description: "{{ doc('open_price') }}"
+      - name: high_price
+        description: "{{ doc('high_price') }}"
+      - name: low_price
+        description: "{{ doc('low_price') }}"
       - name: close_price
-        description: Close of the day's last hourly candle, in USDT.
+        description: "{{ doc('close_price') }}"
         data_tests: [not_null]
+      - name: base_volume
+        description: "{{ doc('base_volume') }}"
+      - name: quote_volume
+        description: "{{ doc('quote_volume') }}"
+      - name: trade_count
+        description: "{{ doc('trade_count') }}"
       - name: candle_count
-        description: Hourly candles in the day; below 24 when Binance had an outage.
+        description: "{{ doc('candle_count') }}"
+      - name: is_complete_day
+        description: "{{ doc('is_complete_day') }}"
       - name: daily_return
-        description: "close_price / previous day's close_price - 1. 0.02 means +2%."
+        description: "{{ doc('daily_return') }}"
       - name: log_return
-        description: "ln(close_price / previous day's close_price). Log returns add up over days."
+        description: "{{ doc('log_return') }}"
       - name: volatility_30d
-        description: >
-          Realized volatility: sample standard deviation of the last 30 daily log returns,
-          annualized with sqrt(365) because crypto trades every day. 0.5 means 50% a year.
-          NULL for an asset's first 30 days.
+        description: "{{ doc('volatility_30d') }}"
 
   - name: mart_macro_daily
     description: >
@@ -86,38 +99,127 @@ models:
                 to: ref('dim_date')
                 field: date_day
       - name: fed_funds_rate
-        description: Federal Funds Effective Rate in percent (4.33 = 4.33%).
+        description: "{{ doc('fed_funds_rate') }}"
         data_tests: [not_null]
       - name: fed_rate_source_date
-        description: The day the fed_funds_rate value describes.
+        description: "{{ doc('fed_rate_source_date') }}"
       - name: fed_rate_available_date
-        description: The day FRED published that value; always on or before market_date.
+        description: "{{ doc('fed_rate_available_date') }}"
+      - name: fed_rate_days_since_observation
+        description: "{{ doc('days_since_observation') }}"
+      - name: fed_rate_is_carried_forward
+        description: "{{ doc('is_carried_forward') }}"
       - name: treasury_10y
-        description: 10-year US Treasury yield in percent.
+        description: "{{ doc('treasury_10y') }}"
         data_tests: [not_null]
       - name: treasury_10y_source_date
-        description: The bond-market day the treasury_10y value describes.
+        description: "{{ doc('treasury_10y_source_date') }}"
       - name: treasury_10y_available_date
-        description: The day FRED published that value; always on or before market_date.
+        description: "{{ doc('treasury_10y_available_date') }}"
+      - name: treasury_10y_days_since_observation
+        description: "{{ doc('days_since_observation') }}"
       - name: treasury_10y_is_carried_forward
-        description: True when nothing new was published on market_date (weekend, holiday).
+        description: "{{ doc('is_carried_forward') }}"
+      - name: treasury_10y_change_bps
+        description: "{{ doc('treasury_10y_change_bps') }}"
+
+  - name: mart_chain_tvl_daily
+    description: >
+      One row per DefiLlama chain per finished UTC day: DeFi total value locked (TVL) and its
+      1-day and 7-day change. Values are DefiLlama's current view of each day; is_retrospective
+      marks those not available at the time (historical backfill or later revision).
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [tvl_date, chain]
+      - dbt_utils.expression_is_true:
+          name: mart_chain_tvl_daily_tvl_cannot_drop_below_zero
+          arguments:
+            expression: "tvl_change_7d > -1 and tvl_change_1d > -1"
+    columns:
+      - name: tvl_date
+        description: UTC day of the TVL point (DefiLlama's 00:00 UTC value).
+        data_tests:
+          - not_null
+          # A missing day only makes the change columns NULL, so it warns instead of failing.
+          - dbt_utils.sequential_values:
+              arguments:
+                interval: 1
+                datepart: day
+                group_by_columns: [chain]
+              config:
+                severity: warn
+      - name: chain
+        description: "{{ doc('chain') }}"
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_chain')
+                field: chain_slug
+      - name: related_symbol
+        description: Binance pair of the chain's native asset (e.g. ETHUSDT for Ethereum); NULL for "All".
+      - name: tvl_usd
+        description: "{{ doc('tvl_usd') }}"
+        data_tests: [not_null]
+      - name: tvl_change_1d
+        description: "{{ doc('tvl_change_1d') }}"
+      - name: tvl_change_7d
+        description: "{{ doc('tvl_change_7d') }}"
+      - name: fetched_date
+        description: "{{ doc('fetched_date') }}"
+      - name: is_retrospective
+        description: "{{ doc('is_retrospective') }}"
 
   - name: mart_market_macro_daily
     description: >
       Main analytics table: one row per asset per day with its return and volatility next to
-      the Fed Funds rate and 10-year Treasury yield known that day.
+      the Fed Funds rate and 10-year Treasury yield known that day, and DeFi TVL on the asset's
+      chain and on all chains.
     data_tests:
       - dbt_utils.unique_combination_of_columns:
           arguments:
             combination_of_columns: [trade_date, symbol]
-      # The join must not multiply rows (fan-out: one asset-day joined to several macro rows).
+      # The joins must not multiply rows (fan-out: one asset-day joined to several macro or TVL rows).
       - dbt_utils.equal_rowcount:
           arguments:
             compare_model: ref('mart_asset_daily')
     columns:
-      - name: treasury_10y
-        description: 10-year US Treasury yield in percent, as known on trade_date.
-        data_tests: [not_null]
+      - name: trade_date
+        description: "{{ doc('trade_date') }}"
+      - name: symbol
+        description: "{{ doc('symbol') }}"
+      - name: close_price
+        description: "{{ doc('close_price') }}"
+      - name: daily_return
+        description: "{{ doc('daily_return') }}"
+      - name: log_return
+        description: "{{ doc('log_return') }}"
+      - name: volatility_30d
+        description: "{{ doc('volatility_30d') }}"
+      - name: base_volume
+        description: "{{ doc('base_volume') }}"
+      - name: quote_volume
+        description: "{{ doc('quote_volume') }}"
       - name: fed_funds_rate
-        description: Federal Funds Effective Rate in percent, as known on trade_date.
+        description: "{{ doc('fed_funds_rate') }}"
         data_tests: [not_null]
+      - name: fed_rate_source_date
+        description: "{{ doc('fed_rate_source_date') }}"
+      - name: treasury_10y
+        description: "{{ doc('treasury_10y') }}"
+        data_tests: [not_null]
+      - name: treasury_10y_source_date
+        description: "{{ doc('treasury_10y_source_date') }}"
+      - name: treasury_10y_change_bps
+        description: "{{ doc('treasury_10y_change_bps') }}"
+      - name: chain
+        description: The DefiLlama chain of the asset (Ethereum, Solana, BSC, Bitcoin).
+      - name: chain_tvl_usd
+        description: "{{ doc('chain_tvl_usd') }}"
+      - name: chain_tvl_change_7d
+        description: "{{ doc('tvl_change_7d') }}"
+      - name: defi_tvl_usd
+        description: "{{ doc('defi_tvl_usd') }}"
+      - name: defi_tvl_change_7d
+        description: "{{ doc('tvl_change_7d') }}"

@@ -31,3 +31,15 @@ sources:
           freshness:
             warn_after: {count: 5, period: day}
             error_after: {count: 7, period: day}
+      - name: raw_defillama_chain_tvl
+        description: >
+          DefiLlama daily TVL per chain, one row per value per fetch day that changed it. Grain
+          chain + tvl_date + fetched_date. is_backfill marks values loaded long after their day.
+        # The daily run loads every finished day, so the newest tvl_date is yesterday (~24.5 hours
+        # old at 00:30 UTC). Older than that means DefiLlama or our load stopped.
+        config:
+          loaded_at_field: "cast(tvl_date as timestamp_tz)"  # a date, freshness needs a timestamp
+          freshness:
+            warn_after: {count: 36, period: hour}
+            error_after: {count: 60, period: hour}
+

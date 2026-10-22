@@ -1,0 +1,6 @@
+chain_id,chain_slug,chain_name,related_symbol,description
+ETHEREUM,Ethereum,Ethereum,ETHUSDT,"DeFi TVL on the Ethereum chain, home of ETH."
+SOLANA,Solana,Solana,SOLUSDT,"DeFi TVL on the Solana chain, home of SOL."
+BSC,BSC,BNB Smart Chain,BNBUSDT,"DeFi TVL on BNB Smart Chain, home of BNB."
+BITCOIN,Bitcoin,Bitcoin,BTCUSDT,"DeFi TVL on Bitcoin (small: Bitcoin is mostly not a DeFi chain)."
+ALL,All,All chains,,"DeFi TVL on every chain DefiLlama tracks, added up."

@@ -4,7 +4,7 @@ version: 2
 
 models:
   - name: dim_date
-    description: Every calendar day from 2018-12-01 to one year after today, weekends included.
+    description: Every calendar day from 2018-01-01 to one year after today, weekends included.
     data_tests:
       - dbt_utils.expression_is_true:
           name: dim_date_weekend_flag_matches_weekday
@@ -102,3 +102,46 @@ models:
               arguments:
                 to: ref('dim_date')
                 field: date_day
+
+  - name: dim_chain
+    description: The DefiLlama chains FinSight loads, one row each (from the defillama_chains seed).
+    columns:
+      - name: chain_id
+        data_tests: [unique, not_null]
+      - name: chain_slug
+        description: DefiLlama slug; the key facts use to point at this table.
+        data_tests: [unique, not_null]
+      - name: related_symbol
+        description: Binance pair of the chain's native asset; NULL for "All".
+        data_tests:
+          # One chain per asset at most, or joining TVL onto asset rows would multiply them.
+          - unique
+          - relationships:
+              arguments:
+                to: ref('dim_asset')
+                field: symbol
+
+  - name: fct_chain_tvl
+    description: >
+      One row per chain + tvl_date + fetched_date. The value was the latest DefiLlama value for
+      tvl_date from fetched_date through valid_to.
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [chain, tvl_date, fetched_date]
+    columns:
+      - name: chain
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_chain')
+                field: chain_slug
+      - name: tvl_date
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_date')
+                field: date_day
+
