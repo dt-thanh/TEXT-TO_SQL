@@ -2,17 +2,17 @@
 # Development tools are in requirements-dev.txt.
 fastapi==0.115.12
 httpx==0.28.1
-langgraph==0.4.5
-openai==1.78.1
+langgraph==1.2.16
+openai==3.36.0
 pandas==2.2.3
 pydantic==2.11.4
 pydantic-settings==2.9.1
 pyyaml==6.0.3
 snowflake-connector-python==4.7.5
-sqlglot==26.19.0
+sqlglot==30.24.0
 streamlit==1.64.0
 uvicorn[standard]==0.34.2
 
 # Transformations (dbt project in dbt/). dbt-snowflake 1.12 needs connector 4.x.
-dbt-core==1.12.5
+dbt-core==1.12.6
 dbt-snowflake==1.12.1

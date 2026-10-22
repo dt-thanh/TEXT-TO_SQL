@@ -14,7 +14,7 @@ from datetime import date
 from functools import lru_cache
 from typing import Any
 
-from src.agents.graph import MAX_REPAIRS, build_graph
+from src.agents.graph import MAX_REPAIRS, RECURSION_LIMIT, build_graph
 from src.agents.state import AgentState, Attempt
 from src.common.config import get_settings
 from src.services.llm import LLMClient, LLMUsage
@@ -113,7 +113,7 @@ def answer_question(
     warehouse = warehouse or agent_warehouse()
     graph = build_graph(llm, warehouse, max_rows=max_rows, max_repairs=max_repairs)
     started = time.perf_counter()
-    state = graph.invoke({"question": question})
+    state = graph.invoke({"question": question}, config={"recursion_limit": RECURSION_LIMIT})
     answer = to_answer(state, max_rows, seconds=time.perf_counter() - started)
     # One line per question: enough to follow cost, latency and quality from the logs.
     logger.info(

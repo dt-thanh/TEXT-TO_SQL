@@ -69,20 +69,27 @@ def blocked(*violations: Violation) -> SQLValidationResult:
 
 
 def select_violations(select: exp.Select) -> list[Violation]:
-    """Rules for one SELECT: named columns only, rows only from tables and subqueries."""
+    """Rules for one SELECT: named columns only."""
 
-    found = []
     if any(projection.is_star for projection in select.expressions):  # *, t.* (not COUNT(*))
-        found.append(("select_star", "SELECT * is not allowed: name the columns"))
+        return [("select_star", "SELECT * is not allowed: name the columns")]
+    return []
 
-    sources = [select.args["from"].this] if select.args.get("from") else []
-    sources += [join.this for join in select.args.get("joins") or []]
-    for source in sources:
-        # TABLE(...), LATERAL FLATTEN(...), VALUES ... have no table name to check.
-        if not isinstance(source, exp.Table | exp.Subquery):
-            text = source.sql(dialect=DIALECT)[:80]
-            found.append(("table_function", f"{text}: read only from tables, CTEs or subqueries"))
-    return found
+
+def source_violations(clause: exp.From | exp.Join) -> list[Violation]:
+    """Rows may come only from tables, CTEs and subqueries.
+
+    Checked on every FROM and JOIN node of the tree rather than through the SELECT's argument
+    names: sqlglot renamed the FROM argument ("from" → "from_") in a major version, and a rule
+    that silently stops seeing FROM would let TABLE(...) around the allowlist.
+    """
+
+    source = clause.this
+    # TABLE(...), LATERAL FLATTEN(...), VALUES ... have no table name to check.
+    if isinstance(source, exp.Table | exp.Subquery):
+        return []
+    text = source.sql(dialect=DIALECT)[:80]
+    return [("table_function", f"{text}: read only from tables, CTEs or subqueries")]
 
 
 def literal_limit(query: exp.Query) -> int | None:
@@ -158,6 +165,8 @@ class SQLGuard:
                 found.extend(self.table_violations(node, cte_names))
             elif isinstance(node, exp.Select):
                 found.extend(select_violations(node))
+            elif isinstance(node, exp.From | exp.Join):
+                found.extend(source_violations(node))
         return list(dict.fromkeys(found))  # drop exact repeats, keep the order
 
     def result_violations(self, query: exp.Query) -> list[Violation]:

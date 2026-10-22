@@ -35,10 +35,11 @@ class FakeCompletions:
         return self.reply
 
 
-def make_llm(completions: FakeCompletions) -> LLMClient:
+def make_llm(completions: FakeCompletions, **settings: Any) -> LLMClient:
     fake_client = SimpleNamespace(chat=SimpleNamespace(completions=completions))
-    settings = Settings(_env_file=None, llm_model="gpt-4o-mini")
-    return LLMClient(settings=settings, client=fake_client)
+    prices = {"llm_input_usd_per_1m": 0.15, "llm_output_usd_per_1m": 0.60}
+    settings = {"llm_model": "gpt-4o-mini", **prices, **settings}
+    return LLMClient(settings=Settings(_env_file=None, **settings), client=fake_client)
 
 
 def test_asks_for_strict_json_at_temperature_zero_with_a_token_cap() -> None:
@@ -49,9 +50,21 @@ def test_asks_for_strict_json_at_temperature_zero_with_a_token_cap() -> None:
     request = completions.requests[0]
     assert request["model"] == "gpt-4o-mini"
     assert request["temperature"] == 0
-    assert request["max_tokens"] == 300
+    assert request["max_completion_tokens"] == 300
     assert request["response_format"]["json_schema"]["strict"] is True
     assert [m["role"] for m in request["messages"]] == ["system", "user"]
+
+
+def test_a_reasoning_model_gets_an_effort_instead_of_temperature_and_more_room() -> None:
+    completions = FakeCompletions('{"sql": "SELECT 1"}')
+    llm = make_llm(completions, llm_model="gpt-5-mini", llm_reasoning_effort="minimal")
+
+    llm.generate_json("rules", "question", "sql_answer", SCHEMA, 300)
+
+    request = completions.requests[0]
+    assert "temperature" not in request  # gpt-5 models reject temperature=0
+    assert request["reasoning_effort"] == "minimal"
+    assert request["max_completion_tokens"] > 300  # hidden reasoning tokens share the cap
 
 
 def test_returns_parsed_json_and_cost() -> None:

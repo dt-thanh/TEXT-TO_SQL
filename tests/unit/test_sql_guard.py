@@ -195,8 +195,10 @@ def test_tables_must_be_written_in_full(source: str) -> None:
     [
         "SELECT query_text FROM TABLE(FINSIGHT.INFORMATION_SCHEMA.QUERY_HISTORY())",
         f"SELECT f.value FROM {ASSET} AS a, LATERAL FLATTEN(input => a.symbol) AS f",
+        f"SELECT a.symbol FROM {ASSET} AS a JOIN TABLE(GENERATOR(ROWCOUNT => 5)) AS g ON TRUE",
+        "SELECT v.a FROM (VALUES (1), (2)) AS v(a)",
     ],
-    ids=["table-function", "lateral-flatten"],
+    ids=["table-function", "lateral-flatten", "joined-table-function", "values"],
 )
 def test_table_functions_cannot_go_around_the_allowlist(sql: str) -> None:
     assert "table_function" in violations_of(sql)

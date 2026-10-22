@@ -18,7 +18,7 @@ RUN python -m venv /opt/finsight-venv \
 # that download can fail, so it gets its own step with up to 3 attempts. Docker caches each
 # step: once this one succeeds, rebuilds skip the download. Keep the version equal to .venv's.
 RUN for attempt in 1 2 3; do \
-        /opt/finsight-venv/bin/pip install --no-cache-dir "dbt-core-experimental-parser==2.0.5" \
+        /opt/finsight-venv/bin/pip install --no-cache-dir "dbt-core-experimental-parser==2.0.8" \
         && exit 0; \
         echo "download failed (attempt ${attempt}/3), retrying in 10s"; sleep 10; \
     done; exit 1

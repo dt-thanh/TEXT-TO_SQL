@@ -37,6 +37,10 @@ class LLMResult:
     seconds: float
 
 
+# Room for a reasoning model's hidden reasoning tokens on top of the answer's own cap.
+REASONING_TOKEN_ALLOWANCE = 1500
+
+
 class LLMClient:
     """Low-temperature, JSON-only calls with a hard cap on output tokens."""
 
@@ -63,11 +67,20 @@ class LLMClient:
         """
 
         started = time.perf_counter()
+        effort = self.settings.llm_reasoning_effort
+        if effort:
+            # Reasoning models (gpt-5 family) reject temperature=0, and their hidden reasoning
+            # tokens count against the same cap, so the answer gets REASONING_TOKEN_ALLOWANCE extra.
+            sampling: dict[str, Any] = {
+                "reasoning_effort": effort,
+                "max_completion_tokens": max_output_tokens + REASONING_TOKEN_ALLOWANCE,
+            }
+        else:
+            sampling = {"temperature": 0, "max_completion_tokens": max_output_tokens}
         try:
             response = self._client.chat.completions.create(
                 model=self.settings.llm_model,
-                temperature=0,
-                max_tokens=max_output_tokens,
+                **sampling,
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt},

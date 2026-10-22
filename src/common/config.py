@@ -32,11 +32,16 @@ class Settings(BaseSettings):
     fred_api_key: SecretStr = SecretStr("")
 
     openai_api_key: SecretStr = SecretStr("")
-    llm_model: str = "gpt-4o-mini"
+    # Chosen by an A/B benchmark (docs/upgrade_baseline.md, 2026-10-22): same holdout score as
+    # gpt-4o-mini, steadier and about 3x faster at p95, for about twice the price per question.
+    llm_model: str = "gpt-4.1-mini"
     # USD per 1M tokens, only used to report what each question cost. They must match llm_model:
-    # these are gpt-4o-mini's standard prices (developers.openai.com/api/docs/pricing, Sep 2026).
-    llm_input_usd_per_1m: float = 0.15
-    llm_output_usd_per_1m: float = 0.60
+    # these are gpt-4.1-mini's standard prices (developers.openai.com/api/docs/pricing, Oct 2026).
+    llm_input_usd_per_1m: float = 0.40
+    llm_output_usd_per_1m: float = 1.60
+    # Only for reasoning models (e.g. gpt-5-mini), which reject temperature=0: "minimal", "low",
+    # "medium" or "high". Empty = a non-reasoning model called at temperature 0.
+    llm_reasoning_effort: Literal["minimal", "low", "medium", "high"] | None = None
 
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
 

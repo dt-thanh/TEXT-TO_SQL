@@ -13,8 +13,8 @@
           └─(no SQL: gave up)────────────────────────────────────────────────────→ END
 
 Every path ends: each repair increases `repairs`, and no repair starts once it reaches
-max_repairs. LangGraph's recursion_limit (25 steps by default in the pinned 0.4.5; newer
-versions default higher) is only the last safety net.
+max_repairs. RECURSION_LIMIT is only the last safety net: the longest path with two repairs is
+10 steps. It is passed explicitly because LangGraph 1.x defaults to 10,007 steps.
 """
 
 from functools import partial
@@ -32,6 +32,8 @@ from src.agents.state import AgentState
 # Each repair is one more LLM call (~$0.0004) and a few seconds. Two fixes most slips; a model
 # that failed three times on the same question is unlikely to succeed on the fourth.
 MAX_REPAIRS = 2
+# Steps the graph may take before LangGraph stops it (see the module docstring).
+RECURSION_LIMIT = 25
 
 
 def route_after_writing(state: AgentState) -> Literal["validate", "end"]:
