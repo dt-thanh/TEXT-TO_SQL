@@ -16,7 +16,7 @@ chạy và **hiển thị SQL** cùng kết quả.
 - Phase 2: FRED (DFF, DGS10) → `RAW`: giữ mọi vintage (mỗi lần công bố/sửa là một dòng), incremental theo
   ngày công bố.
 - Phase 3: dbt — STAGING (3 view), CORE (star schema, `fct_crypto_kline_1h` incremental) và MART
-  (`mart_asset_daily`, `mart_macro_daily` point-in-time, `mart_market_macro_daily`), 69 data test.
+  (`mart_asset_daily`, `mart_macro_daily` point-in-time, `mart_market_macro_daily`), kèm data test.
 - Phase 3b: Airflow (Docker) chạy toàn bộ pipeline mỗi ngày lúc 00:30 UTC.
 - Phase 4: Text-to-SQL tối giản — câu hỏi → schema MART (từ metadata Snowflake) → OpenAI → SQL → chạy bằng
   user chỉ-đọc `FINSIGHT_AGENT_SVC`.
@@ -28,6 +28,12 @@ chạy và **hiển thị SQL** cùng kết quả.
   được gửi lại cho model sửa (repair_sql), tối đa 2 lần.
 - Phase 8: FastAPI `POST /ask` + giao diện Streamlit (câu trả lời, biểu đồ, bảng, SQL luôn hiển thị, các lần sửa,
   chi phí), chạy local hoặc bằng Docker Compose.
+- Phase 9–10: benchmark (execution accuracy, dev/holdout, khoảng tin cậy Wilson) và CI GitHub Actions.
+- Nâng cấp Research Copilot (2026-10): TVL DeFi theo chain từ DefiLlama (tự lưu lịch sử sửa đổi bằng
+  `fetched_date`), lợi suất 10 năm theo basis point, chế độ Research: model chỉ chọn metric đã kiểm chứng
+  trong catalog, SQL lấy từ template, mọi con số trong kết luận được code đối chiếu với evidence
+  (`POST /research`, tab Research, `make research Q="..."`). Chi tiết: [upgrade_baseline.md](upgrade_baseline.md),
+  [architecture.md](architecture.md).
 
 ## Cài đặt
 
@@ -265,6 +271,11 @@ Snowflake ~2,3 s ít nhất hai lần và đọc lại metadata; 100% SQL qua gu
 holdout 6/6 [61–100%]). A/B 3 lần chạy mỗi cấu hình cho thấy ba luật thêm vào system prompt làm holdout tụt từ 26/27
 xuống 20/27; đã gỡ (commit `ffc42ec`). q14, q15, q16, q18 chuyển sang dev vì đã được dùng để quyết định thay đổi.
 
+Sau nâng cấp Research Copilot (2026-10-22, gpt-4.1-mini): Quick SQL **32/33** (thêm 12 câu về TVL và basis
+point; holdout 14/14 [78–100%]), p50 1,9 s / p95 2,9 s, ~$0,0014/câu. Chế độ Research **19/19** (holdout 9/9
+[70–100%]): chọn đúng metric 15/15, đúng giá trị 24/24, mọi kết luận có bằng chứng 15/15, từ chối đúng 4/4;
+p50 3,3 s / p95 5,3 s, ~$0,0016/câu. Chi tiết: [research_copilot.md](research_copilot.md).
+
 ## Kiểm tra tự động (CI)
 
 [.github/workflows/ci.yml](../.github/workflows/ci.yml) chạy trên GitHub Actions mỗi lần push/pull request vào `main`,
@@ -293,8 +304,11 @@ make dbt-build        # dbt: tạo model + chạy data test
 make dbt-freshness    # dữ liệu RAW có đủ mới không
 make airflow-up       # Airflow: pipeline tự chạy hằng ngày (UI :8081)
 make ui               # giao diện Streamlit (cần make run)
+make load-defillama   # nạp TVL DeFi theo chain → RAW
 make ask Q="..."      # hỏi dữ liệu bằng ngôn ngữ tự nhiên
+make research Q="..." # câu hỏi nghiên cứu → báo cáo Markdown có evidence và SQL
 make prompt Q="..."   # xem prompt model sẽ đọc, không gọi LLM
+make eval-research    # benchmark chế độ Research (ARGS="--gold-only": $0)
 ```
 
 ## Cấu trúc
@@ -302,9 +316,9 @@ make prompt Q="..."   # xem prompt model sẽ đọc, không gọi LLM
 ```text
 src/common/        config, logging, exception dùng chung
 src/services/      adapter ra bên ngoài: Snowflake, LLM, SQL guard
-src/ingestion/     lấy dữ liệu nguồn (Binance, FRED) và nạp vào RAW; phần dùng chung: retrying_http,
+src/ingestion/     lấy dữ liệu nguồn (Binance, FRED, DefiLlama) và nạp vào RAW; phần dùng chung: retrying_http,
                    merge_loader
-src/agents/        vòng Text-to-SQL; LangGraph workflow (skeleton)
+src/agents/        Text-to-SQL (LangGraph, vòng sửa lỗi); research/: chế độ Research (catalog, grounding)
 src/semantic/      đọc semantic/*.yml và chọn ngữ cảnh cho từng câu hỏi
 semantic/          semantic layer: metric, glossary, SQL mẫu (dữ liệu, viết tay)
 ui/                giao diện Streamlit, chỉ gọi API
@@ -314,7 +328,7 @@ dbt/               dự án dbt: RAW → STAGING → CORE → MART, kèm data te
 airflow/           Airflow trong Docker: Dockerfile, docker-compose.yml, dags/
 scripts/           công cụ dòng lệnh, chạy bằng `python -m scripts.<tên>`
 tests/unit/        test không cần hệ thống ngoài
-tests/integration/ test chạy với hệ thống thật (Snowflake, Binance)
+tests/integration/ test chạy với hệ thống thật (Snowflake, Binance, FRED, DefiLlama, quyền user agent)
 ```
 
 Ranh giới module: [docs/architecture.md](architecture.md).
