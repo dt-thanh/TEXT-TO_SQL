@@ -21,6 +21,12 @@ def format_value(value: float | str | None, unit: str) -> str:
         return f"{value:.0f}"
     if unit == "ratio":
         return f"{value:.3f}"
+    if unit == "sigma":
+        return f"{value:.2f} sd"
+    if unit == "price":  # USDT: 87,648.2 for BTC, 0.123457 for a small coin
+        return f"{value:,.6g}" if abs(value) < 1e6 else f"{value:,.0f}"
+    if unit == "percent":
+        return f"{value:.2f}%"
     return f"{value:.4g} {UNIT_LABELS.get(unit, '')}".strip()
 
 
@@ -30,10 +36,30 @@ def evidence_section(item: dict[str, Any]) -> list[str]:
     lines.append(f"Sources: {', '.join(item['sources'])} · n = {item['n']}  ")
     if not item["usable"]:
         lines.append("**Not used: not enough observations.**  ")
-    lines += ["", "| Result | Value |", "|---|---|"]
-    for value in item["values"]:
-        lines.append(f"| {value['description']} | {format_value(value['value'], value['unit'])} |")
+    if item.get("rows"):
+        lines += ["", *rows_table(item["rows"])]
+    else:
+        lines += ["", "| Result | Value |", "|---|---|"]
+        for value in item["values"]:
+            shown = format_value(value["value"], value["unit"])
+            lines.append(f"| {value['description']} | {shown} |")
     lines += ["", "```sql", item["sql"], "```", ""]
+    return lines
+
+
+def rows_table(rows: list[dict[str, Any]]) -> list[str]:
+    """A multi-row result as one Markdown table: key columns, then values, then n."""
+
+    keys = list(rows[0]["key"])
+    names = [value["column"].lower().replace("_", " ") for value in rows[0]["values"]]
+    headers = [*[k.lower().replace("_", " ") for k in keys], *names]
+    lines = ["| " + " | ".join(headers) + " |", "|" + "---|" * len(headers)]
+    for row in rows:
+        cells = [row["key"][k] for k in keys]
+        cells += [format_value(v["value"], v["unit"]) for v in row["values"]]
+        if not row["usable"]:  # the sample column is among the values; say why it is not used
+            cells[-1] += " (not enough data)"
+        lines.append("| " + " | ".join(cells) + " |")
     return lines
 
 

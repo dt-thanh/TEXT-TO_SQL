@@ -112,7 +112,11 @@ def allowed_numbers(question: str, evidence: list[dict[str, Any]]) -> list[float
     for item in evidence:
         texts = [str(value) for value in item.get("params", {}).values()]
         # Dates among the results (e.g. the day the last yield describes) may be quoted too.
-        texts += [v["value"] for v in item.get("values", []) if isinstance(v.get("value"), str)]
+        outputs = [*item.get("values", [])]
+        for row in item.get("rows", []):
+            outputs += row["values"]
+            texts += list(row["key"].values())  # symbols such as 1INCHUSDT carry digits
+        texts += [v["value"] for v in outputs if isinstance(v.get("value"), str)]
         for text in texts:
             numbers += [m.value for m in mentions(text)]
     return numbers
@@ -125,7 +129,12 @@ def ungrounded(
 
     results: list[tuple[float, str]] = []
     for item in cited:
-        for output in item.get("values", []):
+        outputs = [*item.get("values", [])]
+        for row in item.get("rows", []):
+            outputs += row["values"]
+            if as_float(row.get("n")) is not None:
+                results.append((float(row["n"]), "count"))
+        for output in outputs:
             number = as_float(output.get("value"))
             if number is not None:
                 results.append((number, output.get("unit", "")))

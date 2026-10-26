@@ -38,6 +38,7 @@ class ResearchAnswer:
     sql_seconds: float = 0.0
     seconds: float = 0.0
     data_as_of: date | None = None
+    timings: dict[str, float] = field(default_factory=dict)  # seconds per graph node
 
     @property
     def analysis_window(self) -> tuple[str, str] | None:
@@ -54,7 +55,7 @@ def decide_status(state: dict[str, Any]) -> str:
     statuses = [task["status"] for task in state.get("plan_status", [])]
     if not usable_evidence(state):
         return "insufficient_data" if "insufficient_data" in statuses else "error"
-    if any(s != "done" for s in statuses) or state.get("dropped"):
+    if any(s != "done" for s in statuses) or state.get("dropped") or state.get("writer_error"):
         return "partial"
     return "complete"
 
@@ -77,6 +78,7 @@ def to_research_answer(state: dict[str, Any], seconds: float) -> ResearchAnswer:
         sql_seconds=state.get("sql_seconds", 0.0),
         seconds=seconds,
         data_as_of=state.get("data_as_of"),
+        timings=dict(state.get("timings", {})),
     )
 
 
@@ -100,7 +102,7 @@ def answer_research(
     answer = to_research_answer(state, time.perf_counter() - started)
     logger.info(
         "research status=%s tasks=%d evidence=%d findings=%d dropped=%d cost_usd=%.5f "
-        "seconds=%.1f text=%r",
+        "seconds=%.1f timings=%s text=%r",
         answer.status,
         len(answer.plan),
         len(usable_evidence(state)),
@@ -108,6 +110,7 @@ def answer_research(
         len(answer.dropped_findings),
         answer.usage.cost_usd,
         answer.seconds,
+        answer.timings,
         question[:200],
     )
     return answer

@@ -27,7 +27,7 @@ from src.agents.nodes.generate_sql import generate_sql
 from src.agents.nodes.repair_sql import repair_sql
 from src.agents.nodes.retrieve_context import retrieve_context
 from src.agents.nodes.validate_sql import validate_sql
-from src.agents.state import AgentState
+from src.agents.state import AgentState, timed
 
 # Each repair is one more LLM call (~$0.0004) and a few seconds. Two fixes most slips; a model
 # that failed three times on the same question is unlikely to succeed on the fourth.
@@ -58,11 +58,19 @@ def build_graph(llm: Any, warehouse: Any, max_rows: int, max_repairs: int = MAX_
     """Compile the graph for one LLM client and one warehouse connection."""
 
     builder = StateGraph(AgentState)
-    builder.add_node("retrieve_context", partial(retrieve_context, warehouse=warehouse))
-    builder.add_node("generate_sql", partial(generate_sql, llm=llm))
-    builder.add_node("validate_sql", partial(validate_sql, max_rows=max_rows))
-    builder.add_node("execute_sql", partial(execute_sql, warehouse=warehouse, max_rows=max_rows))
-    builder.add_node("repair_sql", partial(repair_sql, llm=llm))
+    builder.add_node(
+        "retrieve_context",
+        timed("retrieve_context", partial(retrieve_context, warehouse=warehouse)),
+    )
+    builder.add_node("generate_sql", timed("generate_sql", partial(generate_sql, llm=llm)))
+    builder.add_node(
+        "validate_sql", timed("validate_sql", partial(validate_sql, max_rows=max_rows))
+    )
+    builder.add_node(
+        "execute_sql",
+        timed("execute_sql", partial(execute_sql, warehouse=warehouse, max_rows=max_rows)),
+    )
+    builder.add_node("repair_sql", timed("repair_sql", partial(repair_sql, llm=llm)))
 
     builder.add_edge(START, "retrieve_context")
     builder.add_edge("retrieve_context", "generate_sql")

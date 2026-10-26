@@ -55,29 +55,37 @@ def writer_prompt() -> str:
 def for_writer(item: dict[str, Any]) -> dict[str, Any]:
     """The evidence as the writer sees it: rounded values, fractions also as percents."""
 
-    values = []
-    for output in item["values"]:
-        value = output["value"]
-        shown: dict[str, Any] = {
-            "name": output["column"].lower(),
-            "meaning": output["description"],
-            "unit": output["unit"],
-        }
-        if value is None or isinstance(value, str):
-            shown["value"] = value
-        else:
-            shown["value"] = float(f"{value:.6g}")
-        if isinstance(value, float) and output["unit"] in PERCENT_UNITS:
-            shown["as_percent"] = f"{value * 100:.2f}%"
-        values.append(shown)
-    return {
+    shown = {
         "id": item["id"],
         "metric": item["metric_name"],
         "metric_definition": " ".join(item.get("definition", "").split()),
         "params": item["params"],
         "n": item["n"],
-        "values": values,
+        "values": [shown_value(output) for output in item["values"]],
     }
+    if item.get("rows"):
+        shown["rows"] = [
+            {**row["key"], "n": row["n"], "values": [shown_value(v) for v in row["values"]]}
+            for row in item["rows"]
+            if row["usable"]
+        ]
+    return shown
+
+
+def shown_value(output: dict[str, Any]) -> dict[str, Any]:
+    value = output["value"]
+    shown: dict[str, Any] = {
+        "name": output["column"].lower(),
+        "meaning": output["description"],
+        "unit": output["unit"],
+    }
+    if value is None or isinstance(value, str):
+        shown["value"] = value
+    else:
+        shown["value"] = float(f"{value:.6g}")
+    if isinstance(value, float) and output["unit"] in PERCENT_UNITS:
+        shown["as_percent"] = f"{value * 100:.2f}%"
+    return shown
 
 
 # Letters only Vietnamese uses; a question without accents gets the English caveats.
@@ -130,7 +138,8 @@ def automatic_caveats(
     for item in evidence:
         if item["metric_id"] == "forward_return_after_yield_move":
             caveats.append(text["events"].format(n=item["n"]))
-        elif item["n"] is not None and item["n"] < 30:
+        # Multi-row results judge each row against min_observations; n there counts rows.
+        elif item["n"] is not None and item["n"] < 30 and not item.get("rows"):
             caveats.append(text["small"].format(metric=item["metric_name"], n=item["n"]))
         stale = stale_days(item)
         if stale is not None:
