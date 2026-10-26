@@ -34,3 +34,6 @@ dbt/.user.yml
 
 # Airflow task logs written by the containers.
 airflow/logs/
+
+# Deployed image tags of this machine (scripts/deploy.sh).
+deploy/.tags

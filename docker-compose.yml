@@ -8,12 +8,14 @@ services:
       - path: .env
         required: false
     environment:
-      # .env holds the host path of the agent's key; inside the container it is mounted here.
+      # .env holds the host paths of the keys; inside the container they are mounted here.
       SNOWFLAKE_AGENT_PRIVATE_KEY_PATH: /opt/secrets/finsight_agent_key.p8
+      SNOWFLAKE_APP_PRIVATE_KEY_PATH: /opt/secrets/finsight_app_key.p8
     volumes:
-      - ${HOME}/.snowflake:/opt/secrets:ro  # the private key, read-only, never in the image
+      - ${HOME}/.snowflake:/opt/secrets:ro  # the private keys, read-only, never in the image
+    # 127.0.0.1 only (AUTH_MODE=local): reachable from this machine, not from the network.
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     healthcheck:
       test:
         - CMD
@@ -38,9 +40,11 @@ services:
     environment:
       # "api" is the service name above: containers on one compose network reach each other by it.
       FINSIGHT_API_URL: http://api:8000
-    # No env_file and no key: the UI only talks to the API, so it holds no secret.
+      # Only with AUTH_MODE=deployed: the API's key, kept server-side by the UI.
+      FINSIGHT_SERVICE_KEY: ${FINSIGHT_SERVICE_KEY:-}
+    # No env_file: the UI only talks to the API, so it holds no Snowflake or OpenAI secret.
     ports:
-      - "8501:8501"
+      - "127.0.0.1:8501:8501"
     depends_on:
       api:
         condition: service_healthy

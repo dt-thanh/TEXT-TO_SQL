@@ -1,0 +1,55 @@
+# FinSight on one machine that others can reach (AUTH_MODE=deployed). Spec v1.1, 6.5.
+# Images come from the registry by tag (FINSIGHT_TAG), so rollback = deploy the previous tag:
+#     scripts/deploy.sh v0.2.0     ·     scripts/deploy.sh --rollback
+# Airflow runs from airflow/docker-compose.yml next to it. Snowflake stays an external service.
+#
+# Only Caddy publishes ports. The API is not reachable from outside: the UI calls it on the
+# compose network with the service key, and Caddy asks for the owner's password (basic auth).
+
+services:
+  api:
+    image: ${FINSIGHT_IMAGE:-ghcr.io/dt-thanh/finsight-app}:${FINSIGHT_TAG:?set FINSIGHT_TAG}
+    env_file: ../.env
+    environment:
+      AUTH_MODE: deployed  # the API refuses to start without FINSIGHT_SERVICE_KEY
+      LOG_FORMAT: json
+      SNOWFLAKE_AGENT_PRIVATE_KEY_PATH: /opt/secrets/finsight_agent_key.p8
+      SNOWFLAKE_APP_PRIVATE_KEY_PATH: /opt/secrets/finsight_app_key.p8
+    volumes:
+      - ${SNOWFLAKE_KEYS_DIR:-${HOME}/.snowflake}:/opt/secrets:ro
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=2)"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  ui:
+    image: ${FINSIGHT_IMAGE:-ghcr.io/dt-thanh/finsight-app}:${FINSIGHT_TAG:?set FINSIGHT_TAG}
+    command: [streamlit, run, ui/streamlit_app.py, --server.address=0.0.0.0, --server.port=8501, --server.headless=true]
+    environment:
+      FINSIGHT_API_URL: http://api:8000
+      FINSIGHT_SERVICE_KEY: ${FINSIGHT_SERVICE_KEY:?set FINSIGHT_SERVICE_KEY}
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+  proxy:
+    image: caddy:2.10.2
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      FINSIGHT_DOMAIN: ${FINSIGHT_DOMAIN:-localhost}
+      FINSIGHT_UI_USER: ${FINSIGHT_UI_USER:-owner}
+      # bcrypt hash, made with: docker run --rm caddy:2.10.2 caddy hash-password
+      FINSIGHT_UI_PASSWORD_HASH: ${FINSIGHT_UI_PASSWORD_HASH:?set FINSIGHT_UI_PASSWORD_HASH}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+    depends_on: [ui]
+    restart: unless-stopped
+
+volumes:
+  caddy-data:

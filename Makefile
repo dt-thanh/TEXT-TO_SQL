@@ -8,7 +8,7 @@ DBT := set -a && . ./.env && set +a && cd dbt && ../.venv/bin/dbt
 AIRFLOW := AIRFLOW_UID=$$(id -u) docker compose -f airflow/docker-compose.yml
 
 .PHONY: install run ui app-up app-down ci test test-unit lint check-snowflake load-binance load-fred load-defillama \
-	dbt-deps dbt-build dbt-parse dbt-freshness dbt-docs airflow-up airflow-down airflow-check airflow-logs ask \
+	add-asset onboard-assets refresh-binance-catalog brief eval-brief eval-chat risk-frequency dbt-deps dbt-build dbt-parse dbt-freshness dbt-docs airflow-up airflow-down airflow-check airflow-logs ask \
 	prompt research eval eval-gold eval-research
 
 install:
@@ -16,11 +16,13 @@ install:
 
 # The API on http://localhost:8000 (docs: /docs). Restarts when code changes.
 run:
-	$(PY) -m uvicorn src.main:app --reload --port 8000
+	$(PY) -m uvicorn src.main:app --reload --host 127.0.0.1 --port 8000
 
-# The Streamlit screen on http://localhost:8501. Needs the API running (make run).
+# The Streamlit screen on http://127.0.0.1:8501 (another port: make ui UI_PORT=8502).
+# Needs the API running (make run).
+UI_PORT ?= 8501
 ui:
-	$(PY) -m streamlit run ui/streamlit_app.py --server.port 8501
+	$(PY) -m streamlit run ui/streamlit_app.py --server.address 127.0.0.1 --server.port $(UI_PORT)
 
 # API + UI in Docker (docker-compose.yml at the repository root).
 app-up:
@@ -86,6 +88,25 @@ airflow-check:
 airflow-logs:
 	$(AIRFLOW) logs -f --tail 100 airflow-scheduler
 
+# Check coins and add the right ones (a typo gets suggestions): make add-asset SYMBOL="link avax arbb"
+add-asset:
+	$(PY) -m scripts.onboard_assets add $(SYMBOL)
+
+# Run the onboarding steps by hand, without Airflow: verify + backfill, dbt, mark ready.
+onboard-assets:
+	$(PY) -m scripts.onboard_assets load; test $$? -ne 1
+	$(DBT) build --select binance_assets dim_asset+ stg_binance_kline+
+	$(PY) -m scripts.onboard_assets finalize
+
+# Refresh CONTROL.BINANCE_SYMBOL (Binance USDT spot pairs) by hand; Airflow does it daily.
+refresh-binance-catalog:
+	$(PY) -m scripts.onboard_assets refresh-catalog
+
+# Daily brief of every watchlist, saved in CONTROL.DAILY_BRIEF (~$0.002 each).
+# make brief ARGS="--watchlist default --print"   ·   ARGS="--no-llm --print" costs nothing.
+brief:
+	$(PY) -m scripts.daily_brief $(ARGS)
+
 # Ask a question in plain language: make ask Q="BTC biến động thế nào tuần trước?"
 ask:
 	$(PY) -m scripts.ask "$(Q)"
@@ -105,6 +126,18 @@ eval:
 # Benchmark research mode (eval/research_questions.jsonl). ARGS="--gold-only" costs nothing.
 eval-research:
 	$(PY) -m eval.run_research_eval $(ARGS)
+
+# Benchmark the chat (follow-ups, greetings, out of scope). ARGS="--gold-only" costs nothing.
+eval-chat:
+	$(PY) -m eval.run_chat_eval $(ARGS)
+
+# How often each risk rule fires on real data (docs/risk_signals.md). No LLM.
+risk-frequency:
+	$(PY) -m scripts.risk_signal_frequency
+
+# Benchmark the Daily Brief (eval/brief_cases.jsonl). ARGS="--no-llm" costs nothing.
+eval-brief:
+	$(PY) -m eval.run_brief_eval $(ARGS)
 
 # Only check that every gold SQL still runs: no LLM, no cost.
 eval-gold:

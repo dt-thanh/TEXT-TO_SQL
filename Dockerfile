@@ -25,6 +25,8 @@ COPY --from=builder /opt/venv /opt/venv
 COPY src ./src
 COPY prompts ./prompts
 COPY semantic ./semantic
+# The core asset list (dbt/seeds/binance_assets.csv) is read by src/control/assets.py.
+COPY dbt/seeds ./dbt/seeds
 COPY ui ./ui
 
 EXPOSE 8000

@@ -1,0 +1,8 @@
+# HTTPS (automatic certificate for a real domain; a local one for "localhost") and one password
+# for the owner in front of the UI. The API is not routed here: only the UI talks to it.
+{$FINSIGHT_DOMAIN} {
+	basic_auth {
+		{$FINSIGHT_UI_USER} {$FINSIGHT_UI_PASSWORD_HASH}
+	}
+	reverse_proxy ui:8501
+}

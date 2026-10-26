@@ -7,6 +7,7 @@ name: CI
 on:
   push:
     branches: [main]
+    tags: ["v*"]  # a release tag also publishes the images (job "publish")
   pull_request:
     branches: [main]
 
@@ -87,7 +88,35 @@ jobs:
           from src.agents.sql_generation import system_prompt;
           from src.agents.research.planning import planner_prompt;
           from src.agents.research.writing import writer_prompt;
+          from src.agents.chat import rewriter_prompt; rewriter_prompt();
+          from src.control.assets import core_symbols;
+          from src.agents.research.brief import signal_rules;
           layer = load_semantic_layer(); system_prompt(); planner_prompt(); writer_prompt();
-          assert len(layer.research_metrics) >= 9;
+          assert len(layer.research_metrics) >= 14;
+          assert len(core_symbols()) == 4 and 'high_correlation' in signal_rules();
           assert TestClient(app).get('/health').json() == {'status': 'ok'};
           print('image OK')"
+
+  # A release tag (v0.2.0) publishes both images under that tag, so a machine can deploy or roll
+  # back by tag (scripts/deploy.sh). Nothing is published for ordinary pushes.
+  publish:
+    name: Publish images for a release tag
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [python, dags, docker]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v7
+      - name: Log in to GitHub Container Registry
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+      - name: Build and push
+        run: |
+          owner=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          tag=${GITHUB_REF_NAME}
+          docker build -t ghcr.io/$owner/finsight-app:$tag .
+          docker build -f airflow/Dockerfile -t ghcr.io/$owner/finsight-airflow:$tag .
+          docker push ghcr.io/$owner/finsight-app:$tag
+          docker push ghcr.io/$owner/finsight-airflow:$tag
