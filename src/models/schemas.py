@@ -7,7 +7,7 @@ not an LLM call) and documents both shapes at /docs.
 from datetime import date
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, StringConstraints
+from pydantic import BaseModel, Field, StringConstraints
 
 # Long enough for any real question; short enough that nobody pastes a book into the prompt.
 MAX_QUESTION_CHARS = 500
@@ -68,6 +68,7 @@ class AskResponse(BaseModel):
     llm_seconds: float
     sql_seconds: float
     total_seconds: float  # the whole question, metadata lookup included
+    timings: dict[str, float] = {}  # seconds per graph node
     data_as_of: date | None  # newest finished UTC day in the data: answers stop there
 
 
@@ -83,6 +84,15 @@ class EvidenceValue(BaseModel):
     description: str
 
 
+class EvidenceRow(BaseModel):
+    """One row of a multi-row metric (one asset, or one pair of assets)."""
+
+    key: dict[str, str]
+    values: list[EvidenceValue]
+    n: int | None
+    usable: bool
+
+
 class Evidence(BaseModel):
     """One verified metric result: the SQL that produced it and its values."""
 
@@ -95,6 +105,7 @@ class Evidence(BaseModel):
     data_window: str
     n: int | None
     values: list[EvidenceValue]
+    rows: list[EvidenceRow] = []  # multi-row metrics; `values` is empty for them
     pit_mode: str | None
     usable: bool  # False: too few observations, not used by the findings
 
@@ -131,5 +142,46 @@ class ResearchResponse(BaseModel):
     llm_seconds: float
     sql_seconds: float
     total_seconds: float
+    timings: dict[str, float] = {}  # seconds per graph node
     report_markdown: str
 
+
+class ChatTurn(BaseModel):
+    """One earlier exchange, sent back by the client: the server keeps no conversation."""
+
+    question: Annotated[str, StringConstraints(max_length=MAX_QUESTION_CHARS)]
+    standalone: Annotated[str, StringConstraints(max_length=1000)]
+    summary: Annotated[str, StringConstraints(max_length=1000)] = ""
+
+
+class ChatRequest(BaseModel):
+    message: Annotated[
+        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=MAX_QUESTION_CHARS)
+    ]
+    history: list[ChatTurn] = Field(default=[], max_length=20)
+
+
+class ChatResponse(BaseModel):
+    """kind: answer (a data question, `answer` is filled), smalltalk or declined (`reply`).
+    `standalone_question` is how a follow-up was understood, when it differs from the message.
+    `turn` goes back into `history` with the next message."""
+
+    kind: Literal["answer", "smalltalk", "declined"]
+    message: str
+    standalone_question: str | None
+    reply: str | None
+    answer: AskResponse | None
+    rewrite_usage: Usage
+    turn: ChatTurn
+
+
+class ResearchChatResponse(BaseModel):
+    """Research as a conversation: like ChatResponse, with a research report as the answer."""
+
+    kind: Literal["answer", "smalltalk", "declined"]
+    message: str
+    standalone_question: str | None
+    reply: str | None
+    research: ResearchResponse | None
+    rewrite_usage: Usage
+    turn: ChatTurn

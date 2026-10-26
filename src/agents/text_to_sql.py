@@ -9,7 +9,7 @@ can only SELECT from MART, with a timeout.
 
 import logging
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
 from functools import lru_cache
 from typing import Any
@@ -44,6 +44,7 @@ class Answer:
     repairs: int = 0
     attempts: tuple[Attempt, ...] = ()  # every failed attempt, oldest first
     seconds: float = 0.0  # wall-clock time of the whole question, metadata lookup included
+    timings: dict[str, float] = field(default_factory=dict)  # seconds per graph node
     data_as_of: date | None = None  # newest finished UTC day in the marts: answers stop there
 
     @property
@@ -96,6 +97,7 @@ def to_answer(state: AgentState, max_rows: int, seconds: float = 0.0) -> Answer:
         repairs=state.get("repairs", 0),
         attempts=tuple(state.get("attempts", [])),
         seconds=seconds,
+        timings=dict(state.get("timings", {})),
         data_as_of=state.get("data_as_of"),
     )
 
@@ -117,13 +119,15 @@ def answer_question(
     answer = to_answer(state, max_rows, seconds=time.perf_counter() - started)
     # One line per question: enough to follow cost, latency and quality from the logs.
     logger.info(
-        "question status=%s repairs=%d rows=%d cost_usd=%.5f seconds=%.1f retrieved=%s text=%r",
+        "question status=%s repairs=%d rows=%d cost_usd=%.5f seconds=%.1f retrieved=%s "
+        "timings=%s text=%r",
         answer.status,
         answer.repairs,
         len(answer.rows),
         answer.usage.cost_usd,
         answer.seconds,
         ",".join(answer.retrieved) or "-",
+        answer.timings,
         question[:200],
     )
     return answer
