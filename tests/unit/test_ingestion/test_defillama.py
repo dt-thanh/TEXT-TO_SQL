@@ -172,3 +172,9 @@ def test_the_first_load_of_a_chain_is_a_backfill_and_later_ones_are_not() -> Non
 
     assert (first.is_backfill, later.is_backfill) == (True, False)
     assert first.days_received == len(extract_chain_tvl(Source(), "Ethereum", TODAY))
+
+
+def test_the_chains_loaded_are_the_curated_seed_plus_all_chains() -> None:
+    from src.ingestion.defillama.sync import MVP_CHAINS
+
+    assert MVP_CHAINS == ("Ethereum", "Solana", "BSC", "Bitcoin", "All")

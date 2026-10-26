@@ -39,6 +39,14 @@ order by t.table_name, c.ordinal_position
 """
 
 
+UNIVERSE_TABLE = "FINSIGHT.MART.MART_ASSET_UNIVERSE"
+UNIVERSE_SQL = f"""
+select symbol, base_asset, display_name, is_core, chain_slug, status, data_from, data_through
+from {UNIVERSE_TABLE}
+order by symbol
+"""
+
+
 @dataclass(frozen=True)
 class SchemaContext:
     """One metadata read, two uses: the text the model sees and the tables the guard allows."""
@@ -46,6 +54,8 @@ class SchemaContext:
     prompt_text: str
     tables: frozenset[str]  # fully qualified, e.g. FINSIGHT.MART.MART_ASSET_DAILY
     data_as_of: date | None = None  # newest finished UTC day in the marts
+    # MART_ASSET_UNIVERSE rows: which assets exist (core + added). Empty before it is built.
+    universe: tuple[dict[str, Any], ...] = ()
 
 
 def format_schema_context(rows: list[dict[str, Any]], database: str = "FINSIGHT") -> str:
@@ -86,10 +96,13 @@ def get_schema_context(client: Any, clock: Callable[[], float] = time.monotonic)
     if cached and clock() - cached[0] < SCHEMA_TTL_SECONDS:
         return cached[1]
     rows = client.execute(SCHEMA_SQL, {"schema": SCHEMA})
+    tables = table_names(rows)
+    universe = tuple(client.execute(UNIVERSE_SQL)) if UNIVERSE_TABLE in tables else ()
     context = SchemaContext(
         prompt_text=format_schema_context(rows),
-        tables=table_names(rows),
+        tables=tables,
         data_as_of=rows[0].get("LATEST_TRADE_DATE") if rows else None,
+        universe=universe,
     )
     _cache[client] = (clock(), context)
     return context

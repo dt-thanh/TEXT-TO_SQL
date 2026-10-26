@@ -15,6 +15,8 @@ from src.semantic.layer import Concept, Param, SemanticLayer
 
 # Nothing in the marts is older than this (DefiLlama TVL starts 2018-02-12).
 DATA_START = date(2018, 1, 1)
+# Largest symbol_list: a watchlist (spec v1.1, 3.9).
+MAX_SYMBOLS = 10
 
 
 class TaskError(ValueError):
@@ -41,11 +43,21 @@ def literal(
     """(normalized value, SQL literal) for one parameter, or TaskError."""
 
     value = raw.strip()
-    if param.type == "symbol":
+    if param.type in ("symbol", "symbol_list"):
+        # coverage.assets is the ready assets of MART_ASSET_UNIVERSE (with_universe): an asset
+        # still loading, unsupported or in error is refused here, before any SQL.
         symbols = {asset.symbol for asset in layer.coverage.assets}
-        if value.upper() not in symbols:
-            raise TaskError(f"{param.name}={value!r} is not one of {sorted(symbols)}")
-        return value.upper(), f"'{value.upper()}'"
+        given = [part.strip().upper() for part in value.split(",")] if value else []
+        if param.type == "symbol" and len(given) != 1:
+            raise TaskError(f"{param.name}={value!r} must be one symbol")
+        if not 1 <= len(given) <= MAX_SYMBOLS or len(set(given)) != len(given):
+            raise TaskError(f"{param.name}: 1 to {MAX_SYMBOLS} different symbols")
+        unknown = [symbol for symbol in given if symbol not in symbols]
+        if unknown:
+            shown = ", ".join(unknown)
+            raise TaskError(f"{param.name}={shown!r} is not one of the ready {sorted(symbols)}")
+        # Every symbol is one of the known pairs (letters and digits), so quoting is safe.
+        return ",".join(given), ", ".join(f"'{symbol}'" for symbol in given)
     if param.type == "chain":
         chains = {chain.chain.lower(): chain.chain for chain in layer.coverage.defi_chains}
         if value.lower() not in chains:

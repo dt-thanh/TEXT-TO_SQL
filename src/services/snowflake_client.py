@@ -18,6 +18,7 @@ from snowflake.connector.errors import Error as SnowflakeDriverError
 
 from src.common.config import Settings, get_settings
 from src.common.exceptions import WarehouseError
+from src.common.request_context import NO_REQUEST, request_id_var
 
 logger = logging.getLogger(__name__)
 
@@ -39,9 +40,17 @@ def refuse_duplicate_columns(description: Any) -> None:
         )
 
 
-def run_query(conn: Any, sql: str, params: Any, max_rows: int | None) -> list[dict[str, Any]]:
+def run_query(
+    conn: Any, sql: str, params: Any, max_rows: int | None, query_tag: str | None = None
+) -> list[dict[str, Any]]:
     with conn.cursor(DictCursor) as cur:
-        cur.execute(sql, params)
+        request_id = request_id_var.get()
+        if query_tag and request_id != NO_REQUEST:
+            # The API request id in Snowflake's QUERY_HISTORY: one search finds every query of
+            # a slow or expensive request.
+            cur.execute(sql, params, _statement_params={"QUERY_TAG": f"{query_tag}:{request_id}"})
+        else:
+            cur.execute(sql, params)
         refuse_duplicate_columns(cur.description)
         return cur.fetchmany(max_rows) if max_rows else cur.fetchall()
 
@@ -57,6 +66,7 @@ class SnowflakeClient:
         keep_connection: bool = False,
     ) -> None:
         self.settings = settings or get_settings()
+        self.query_tag = query_tag
         self.session_parameters: dict[str, Any] = {"QUERY_TAG": query_tag}
         if statement_timeout_seconds:
             # Snowflake itself cancels any statement running longer than this.
@@ -106,16 +116,16 @@ class SnowflakeClient:
         try:
             if not self.keep_connection:
                 with self.connect() as conn:
-                    return run_query(conn, sql, params, max_rows)
+                    return run_query(conn, sql, params, max_rows, self.query_tag)
             try:
-                return run_query(self._shared_connection(), sql, params, max_rows)
+                return run_query(self._shared_connection(), sql, params, max_rows, self.query_tag)
             except SnowflakeDriverError as err:
                 if err.errno not in SESSION_GONE_ERRNOS:
                     raise
                 # The session died (e.g. hours idle): log in again and run the query once more.
                 logger.warning("Snowflake session is gone (%s); reconnecting", err.errno)
                 self.close()
-                return run_query(self._shared_connection(), sql, params, max_rows)
+                return run_query(self._shared_connection(), sql, params, max_rows, self.query_tag)
         except SnowflakeDriverError as err:
             raise WarehouseError(f"Query failed: {err}") from err
 
@@ -135,3 +145,19 @@ class SnowflakeClient:
             if self._connection is None or self._connection.is_closed():
                 self._connection = self.connect()
             return self._connection
+
+
+class ConnectionRunner:
+    """execute() over one already open connection, for scripts that also hand the same
+    connection to a loader: one login for the whole job."""
+
+    def __init__(self, conn: Any) -> None:
+        self.conn = conn
+
+    def execute(
+        self, sql: str, params: dict[str, Any] | None = None, max_rows: int | None = None
+    ) -> list[dict[str, Any]]:
+        try:
+            return run_query(self.conn, sql, params, max_rows)
+        except SnowflakeDriverError as err:
+            raise WarehouseError(f"Query failed: {err}") from err

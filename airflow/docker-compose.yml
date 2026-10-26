@@ -23,8 +23,10 @@ x-airflow-common: &airflow-common
     AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "true"
     AIRFLOW__CORE__LOAD_EXAMPLES: "false"
     AIRFLOW__SCHEDULER__ENABLE_HEALTH_CHECK: "true"
-    # Inside the container the Snowflake key lives where the volume below mounts it.
+    # Inside the container the Snowflake keys live where the volume below mounts them. The agent
+    # key is for the daily brief: its queries run as the read-only agent user, like the API's.
     SNOWFLAKE_PRIVATE_KEY_PATH: /opt/secrets/finsight_svc_key.p8
+    SNOWFLAKE_AGENT_PRIVATE_KEY_PATH: /opt/secrets/finsight_agent_key.p8
   volumes:
     - ./dags:/opt/airflow/dags            # DAG files: edit on the host, Airflow picks them up
     - ./logs:/opt/airflow/logs            # task logs, readable from the host
@@ -54,10 +56,19 @@ services:
       start_period: 5s
     restart: always
 
-  # One-off: create/upgrade the metadata tables and the airflow/airflow login, then exit.
+  # One-off: create/upgrade the metadata tables and the airflow/airflow login, create the pools
+  # both FinSight DAGs share (one Binance job, one dbt build at a time), then exit. The pools use
+  # `python -m airflow`: the image's `airflow` script points at a Python without Airflow when it
+  # is not started through /entrypoint.
   airflow-init:
     <<: *airflow-common
-    command: version
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - >-
+        /entrypoint airflow version &&
+        python -m airflow pools set binance_api 1 "One Binance job at a time" &&
+        python -m airflow pools set dbt 1 "One dbt build at a time"
     environment:
       <<: *airflow-common-env
       _AIRFLOW_DB_MIGRATE: "true"
@@ -70,7 +81,8 @@ services:
     <<: *airflow-common
     command: api-server
     ports:
-      - "8081:8080"   # host:container
+      # host:container. 127.0.0.1: the UI (login airflow/airflow) is not reachable from the network.
+      - "127.0.0.1:8081:8080"
     healthcheck:
       test: ["CMD", "curl", "--fail", "http://localhost:8080/api/v2/monitor/health"]
       interval: 30s

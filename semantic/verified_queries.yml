@@ -90,3 +90,118 @@ verified_queries:
       1. Keep Solana days from 2025-01-01 to 2025-06-30.
       2. Add up their log returns and turn the sum back into a return: EXP(sum) - 1.
       3. Multiply by 100 to show percent.
+
+  # Added 2026-10-26 (spec v1.1, 4.4). Run as the agent user; numbers checked against the data.
+  - id: btc_max_drawdown_year
+    question: What was Bitcoin's maximum drawdown in 2024?
+    concepts: [max_drawdown]
+    sql: |
+      WITH prices AS (
+          SELECT
+              trade_date,
+              close_price,
+              MAX(close_price) OVER (
+                  ORDER BY trade_date ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+              ) AS running_peak
+          FROM FINSIGHT.MART.MART_ASSET_DAILY
+          WHERE symbol = 'BTCUSDT'
+            AND trade_date BETWEEN '2024-01-01' AND '2024-12-31'
+      )
+      SELECT MIN(close_price / running_peak - 1) AS max_drawdown, COUNT(*) AS n_days
+      FROM prices
+    explanation: |
+      1. Keep Bitcoin's 2024 days, and for each day the highest close so far in 2024 (the
+         filter comes before the window, so the peak cannot come from 2023).
+      2. The drawdown of a day is close / that peak - 1; the maximum drawdown is the lowest one
+         (-26.2%: the March peak to the August low).
+
+  - id: btc_sol_return_correlation_year
+    question: How correlated were the daily returns of Bitcoin and Solana in 2024, over how many days?
+    concepts: [return_correlation]
+    sql: |
+      SELECT
+          CORR(a.daily_return, b.daily_return) AS return_correlation,
+          COUNT(*) AS n_days
+      FROM FINSIGHT.MART.MART_ASSET_DAILY AS a
+      JOIN FINSIGHT.MART.MART_ASSET_DAILY AS b
+          ON b.trade_date = a.trade_date
+      WHERE a.symbol = 'BTCUSDT'
+        AND b.symbol = 'SOLUSDT'
+        AND a.trade_date BETWEEN '2024-01-01' AND '2024-12-31'
+        AND a.daily_return IS NOT NULL
+        AND b.daily_return IS NOT NULL
+    explanation: |
+      1. Pair each Bitcoin day with the same Solana day (join on trade_date).
+      2. Correlate the daily returns, never the prices, on the days both have a return, and
+         report how many days that is.
+
+  - id: btc_return_on_10y_jump_days
+    question: Ngày lợi suất 10 năm đã biết tăng hơn 10 điểm cơ bản trong năm 2023, BTC lời lỗ trung bình bao nhiêu mỗi ngày?
+    concepts: [macro_rate_change, treasury_10y, daily_return]
+    sql: |
+      SELECT
+          COUNT(*) AS n_days,
+          AVG(daily_return) AS avg_daily_return
+      FROM FINSIGHT.MART.MART_MARKET_MACRO_DAILY
+      WHERE symbol = 'BTCUSDT'
+        AND trade_date BETWEEN '2023-01-01' AND '2023-12-31'
+        AND treasury_10y_change_bps > 10
+        AND daily_return IS NOT NULL
+    explanation: |
+      1. treasury_10y_change_bps là thay đổi so với hôm trước của lợi suất ĐÃ BIẾT vào ngày đó
+         (đã tính sẵn, điểm cơ bản): 4,10% → 4,21% là +11 bps, không phải +11%.
+      2. Giữ các ngày của BTC năm 2023 có mức tăng trên 10 bps, đếm số ngày và lấy trung bình
+         daily_return.
+
+  - id: eth_volatility_when_ethereum_tvl_fell
+    question: In 2023, was ETH more volatile on days when Ethereum DeFi TVL was more than 10% below its level a week earlier?
+    concepts: [tvl_change, annualized_volatility]
+    sql: |
+      SELECT
+          t.tvl_change_7d < -0.1 AS tvl_fell_over_10pct,
+          COUNT(*) AS n_days,
+          STDDEV_SAMP(a.log_return) * SQRT(365) AS annualized_volatility
+      FROM FINSIGHT.MART.MART_ASSET_DAILY AS a
+      JOIN FINSIGHT.MART.MART_CHAIN_TVL_DAILY AS t
+          ON t.tvl_date = a.trade_date
+         AND t.chain = 'Ethereum'
+      WHERE a.symbol = 'ETHUSDT'
+        AND a.trade_date BETWEEN '2023-01-01' AND '2023-12-31'
+        AND a.log_return IS NOT NULL
+        AND t.tvl_change_7d IS NOT NULL
+      GROUP BY tvl_fell_over_10pct
+      ORDER BY tvl_fell_over_10pct
+    explanation: |
+      1. Join ETH days to Ethereum TVL on the same calendar day; one chain per day, so no row is
+         repeated (no fan-out).
+      2. Split the days by whether TVL was more than 10% below its level 7 calendar days before,
+         and compare annualized volatility. Only 5 such days: a very small sample, and the TVL
+         history is DefiLlama's retrospective view.
+
+  - id: eth_monthly_return_and_known_cpi
+    question: For each month of 2024, show ETH's monthly return next to the CPI month-over-month inflation known at the end of that month.
+    concepts: [period_return, inflation_change]
+    sql: |
+      WITH monthly AS (
+          SELECT
+              DATE_TRUNC('month', trade_date) AS month,
+              EXP(SUM(log_return)) - 1 AS monthly_return
+          FROM FINSIGHT.MART.MART_ASSET_DAILY
+          WHERE symbol = 'ETHUSDT'
+            AND trade_date BETWEEN '2024-01-01' AND '2024-12-31'
+          GROUP BY 1
+      )
+      SELECT
+          m.month,
+          m.monthly_return,
+          c.cpi_month,
+          c.cpi_mom_change
+      FROM monthly AS m
+      JOIN FINSIGHT.MART.MART_MACRO_DAILY AS c
+          ON c.market_date = LAST_DAY(m.month)
+      ORDER BY m.month
+    explanation: |
+      1. Compound ETH's daily log returns into one return per month.
+      2. Take CPI as known on the last day of each month (MART_MACRO_DAILY is point in time):
+         cpi_month is the newest month already published then, usually the month before, never
+         a figure released later.

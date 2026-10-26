@@ -19,6 +19,8 @@ from src.ingestion.binance.loader import RAW_TABLE, load_klines, new_batch_id
 
 logger = logging.getLogger(__name__)
 
+# The core assets (dbt/seeds/binance_assets.csv, checked equal by a test). The daily list is
+# these plus the ready assets of CONTROL.ASSET_REGISTRY; this is the fallback without CONTROL.
 MVP_SYMBOLS = ("BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT")
 BACKFILL_START = datetime(2019, 1, 1, tzinfo=UTC)
 # Every incremental run re-reads the last day. MERGE makes the overlap duplicate-free, and it

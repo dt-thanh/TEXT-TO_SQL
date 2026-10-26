@@ -7,9 +7,11 @@ The first load of a chain is a backfill: every value was fetched long after the 
 so it is marked is_backfill and must not be presented as "known at the time".
 """
 
+import csv
 import logging
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
+from pathlib import Path
 from typing import Any
 
 from snowflake.connector.errors import Error as SnowflakeDriverError
@@ -22,8 +24,20 @@ from src.ingestion.merge_loader import new_batch_id
 
 logger = logging.getLogger(__name__)
 
-# The chains of the four tracked assets (ETH, SOL, BNB, BTC), plus DeFi as a whole.
-MVP_CHAINS = ("Ethereum", "Solana", "BSC", "Bitcoin", ALL_CHAINS)
+CHAINS_SEED = Path(__file__).resolve().parents[3] / "dbt" / "seeds" / "defillama_chains.csv"
+
+
+def tracked_chains(seed: Path = CHAINS_SEED) -> tuple[str, ...]:
+    """The chains to load: the curated defillama_chains seed, the same list dim_chain is built
+    from. Adding a chain is one reviewed seed row, never a guess from a coin's ticker."""
+
+    with seed.open(encoding="utf-8") as handle:
+        chains = tuple(row["chain_slug"] for row in csv.DictReader(handle))
+    return chains if ALL_CHAINS in chains else (*chains, ALL_CHAINS)
+
+
+# Ethereum, Solana, BSC, Bitcoin and all chains together, as the seed says.
+MVP_CHAINS = tracked_chains()
 
 
 @dataclass(frozen=True)

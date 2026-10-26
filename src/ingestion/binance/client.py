@@ -10,6 +10,7 @@ from src.common.config import get_settings
 from src.ingestion.retrying_http import get_json
 
 KLINES_PATH = "/api/v3/klines"
+EXCHANGE_INFO_PATH = "/api/v3/exchangeInfo"
 MAX_KLINES_PER_REQUEST = 1000
 
 
@@ -55,6 +56,25 @@ class BinanceClient:
         return get_json(
             self._http,
             KLINES_PATH,
+            params,
+            source="Binance",
+            max_attempts=self.max_attempts,
+            sleep=self._sleep,
+        )
+
+    def get_exchange_info(self, symbol: str | None = None) -> dict[str, Any]:
+        """Trading rules: of one pair, or of every spot pair that is trading (about 2.5 MB).
+
+        An unknown symbol is HTTP 400 (Binance code -1121), raised as SourceAPIError with
+        status_code 400.
+        """
+
+        params = (
+            {"symbol": symbol} if symbol else {"permissions": "SPOT", "symbolStatus": "TRADING"}
+        )
+        return get_json(
+            self._http,
+            EXCHANGE_INFO_PATH,
             params,
             source="Binance",
             max_attempts=self.max_attempts,

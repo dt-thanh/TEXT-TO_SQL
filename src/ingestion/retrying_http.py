@@ -78,7 +78,8 @@ def get_json(
                     masked(
                         f"{source} {path} returned HTTP {response.status_code}: "
                         f"{response.text[:200]}"
-                    )
+                    ),
+                    status_code=response.status_code,
                 )
 
         if attempt < max_attempts:

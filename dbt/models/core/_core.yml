@@ -22,18 +22,29 @@ models:
                 datepart: day
 
   - name: dim_asset
-    description: The tracked crypto assets, one row per asset (from the binance_assets seed).
+    description: >
+      Every asset FinSight knows, one row each: the core assets of the binance_assets seed and
+      the assets the owner added (CONTROL.ASSET_REGISTRY, except pairs Binance does not trade).
     columns:
       - name: asset_id
         data_tests: [unique, not_null]
       - name: symbol
         description: Binance pair; the key facts use to point at this table.
         data_tests: [unique, not_null]
+      - name: asset_key
+        description: The coin's identity, exchange:baseAsset (e.g. BINANCE:ETH); a ticker alone is ambiguous across sources.
+        data_tests: [unique, not_null]
       - name: asset_type
         data_tests:
           - accepted_values:
               arguments:
                 values: [CRYPTO]
+      - name: registry_status
+        description: core for the seed assets, else the asset registry status.
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [core, requested, validating, backfilling, ready, error, disabled]
 
   - name: dim_macro_indicator
     description: Macro indicators, one row each; business names from the seed, units from FRED.

@@ -10,9 +10,10 @@ wrong or missing definition:
 """
 
 import string
+from collections.abc import Mapping, Sequence
 from functools import lru_cache
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 import yaml
 from pydantic import BaseModel, ConfigDict, ValidationError, model_validator
@@ -52,14 +53,27 @@ class Coverage(Strict):
     not_covered: str
 
 
-Unit = Literal["fraction", "fraction_per_year", "ratio", "count", "percent", "bps", "usd", "date"]
+Unit = Literal[
+    "fraction",
+    "fraction_per_year",
+    "ratio",
+    "count",
+    "percent",
+    "bps",
+    "usd",
+    "date",
+    "sigma",
+    "text",
+    "price",
+]
 
 
 class Param(Strict):
     """One parameter of a research template. Values are checked before they reach SQL."""
 
     name: str
-    type: Literal["symbol", "chain", "date", "number", "integer"]
+    # symbol_list: 1 to MAX_SYMBOLS distinct symbols, comma-separated ("BTCUSDT,ETHUSDT").
+    type: Literal["symbol", "symbol_list", "chain", "date", "number", "integer"]
     description: str
     minimum: float | None = None
     maximum: float | None = None
@@ -71,13 +85,18 @@ class Output(Strict):
     column: str  # as Snowflake returns it (upper case)
     unit: Unit
     description: str
+    # When the unit differs per row (risk signals: sigma, ratio or fraction), the result column
+    # that holds each row's unit.
+    unit_column: str | None = None
 
 
 class GoldenCase(Strict):
     """Parameters and the values the template must return for them (checked by hand)."""
 
     params: dict[str, str]
-    expected: dict[str, float]
+    expected: dict[str, float] = {}
+    # Multi-row templates: one dict per expected row, its key columns (text) and values.
+    rows: list[dict[str, str | float]] = []
     # Allowed difference: absolute for values below 1 in size (returns, correlations), relative
     # above (prices, TVL), so one setting works for both. Raise it for data that may be revised.
     tolerance: float = 1e-6
@@ -107,7 +126,11 @@ class Concept(Strict):
     params: list[Param] = []
     outputs: list[Output] = []
     sample_column: str | None = None  # result column with the number of observations
-    min_observations: int = 1
+    min_observations: int = 1  # per row for a multi-row template
+    # Multi-row templates (one row per asset or pair): the columns that name a row. Empty: the
+    # template returns one row.
+    row_key: list[str] = []
+    allow_empty: bool = False  # no row is an answer (no risk signal fired), not missing data
     pit_mode: Literal["as_known", "latest", "retrospective"] | None = None
     golden_case: GoldenCase | None = None
 
@@ -127,6 +150,10 @@ class Concept(Strict):
             raise ValueError(f"{self.id}: a research metric needs sources and pit_mode")
         if self.golden_case and set(self.golden_case.params) != declared:
             raise ValueError(f"{self.id}: golden_case must give every parameter")
+        if not set(self.row_key) <= columns:
+            raise ValueError(f"{self.id}: row_key columns must be declared outputs")
+        if self.golden_case and bool(self.row_key) != bool(self.golden_case.rows):
+            raise ValueError(f"{self.id}: a multi-row template needs golden rows, and only it")
         return self
 
 
@@ -192,3 +219,28 @@ def load_semantic_layer(directory: Path = SEMANTIC_DIR) -> SemanticLayer:
         )
     except ValidationError as err:
         raise ConfigError(f"Invalid semantic layer in {directory}:\n{err}") from err
+
+
+def with_universe(layer: SemanticLayer, universe: Sequence[Mapping[str, Any]]) -> SemanticLayer:
+    """The layer with coverage.assets = the ready assets of MART_ASSET_UNIVERSE.
+
+    The glossary keeps hand-written names and synonyms for the core assets; an added coin gets
+    its ticker and name as synonyms. Without universe rows (table not built yet, offline tests)
+    the glossary list is used as it is.
+    """
+
+    ready = [row for row in universe if row.get("STATUS") == "ready"]
+    if not ready:
+        return layer
+    curated = {asset.symbol: asset for asset in layer.coverage.assets}
+    assets = []
+    for row in sorted(ready, key=lambda r: (not r.get("IS_CORE"), r["SYMBOL"])):
+        symbol = row["SYMBOL"]
+        if symbol in curated:
+            assets.append(curated[symbol])
+            continue
+        base, name = str(row["BASE_ASSET"]), str(row.get("DISPLAY_NAME") or row["BASE_ASSET"])
+        synonyms = sorted({base.lower(), name.lower()})
+        assets.append(Asset(symbol=symbol, name=name, synonyms=synonyms))
+    coverage = layer.coverage.model_copy(update={"assets": assets})
+    return layer.model_copy(update={"coverage": coverage})

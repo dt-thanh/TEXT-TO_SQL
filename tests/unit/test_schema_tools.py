@@ -60,3 +60,15 @@ def test_each_warehouse_connection_has_its_own_cache() -> None:
     get_schema_context(two)
 
     assert one.queries == 1 and two.queries == 1
+
+
+def test_the_asset_universe_is_read_with_the_schema_when_it_exists() -> None:
+    universe = [{"SYMBOL": "LINKUSDT", "STATUS": "ready"}]
+    rows = [*METADATA, {**METADATA[0], "TABLE_NAME": "MART_ASSET_UNIVERSE"}]
+
+    class Warehouse:
+        def execute(self, sql: str, params: Any = None, max_rows: int | None = None) -> list[Any]:
+            return universe if "MART_ASSET_UNIVERSE\n" in sql else rows
+
+    assert get_schema_context(Warehouse()).universe == tuple(universe)
+    assert get_schema_context(CountingWarehouse()).universe == ()  # not built yet: no query

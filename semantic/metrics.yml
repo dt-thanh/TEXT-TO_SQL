@@ -573,3 +573,246 @@ metrics:
         CPI_YOY_END: 0.027119693853
         CPI_YOY_CHANGE_POINTS: -0.0206098942
         N_RELEASES: 12
+
+  # --- Watchlist metrics (spec v1.1, 4.5): one row per asset or pair, for the Daily Brief ---
+
+  - id: watchlist_snapshot
+    name: Performance of several assets over a period
+    synonyms:
+      - watchlist
+      - several assets
+      - each asset
+      - every asset
+      - danh mục theo dõi
+      - từng đồng
+      - các đồng
+    sql: Per asset, the same formulas as period_return, annualized_volatility and max_drawdown
+    unit: one row per asset
+    definition: >
+      For each asset of the list, over the days of the period: last close, compounded return,
+      annualized volatility of daily log returns, largest fall from an earlier peak, number of
+      daily returns and the newest day with data.
+    pitfalls: >
+      For two or more assets compared side by side. For one asset, plan period_return,
+      annualized_volatility and max_drawdown instead. A newly added asset may have little
+      history: its row counts fewer days and is not used below the minimum, without affecting
+      the other assets.
+    sources: [binance]
+    pit_mode: as_known
+    params:
+      - {name: symbols, type: symbol_list, description: 'Comma-separated asset pairs, e.g. BTCUSDT,ETHUSDT.'}
+      - {name: start_date, type: date, description: First day of the period.}
+      - {name: end_date, type: date, description: Last day of the period.}
+    template: |
+      WITH days AS (
+          SELECT
+              symbol,
+              trade_date,
+              close_price,
+              log_return,
+              MAX(close_price) OVER (
+                  PARTITION BY symbol ORDER BY trade_date
+                  ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+              ) AS running_peak
+          FROM FINSIGHT.MART.MART_ASSET_DAILY
+          WHERE symbol IN ({symbols})
+            AND trade_date BETWEEN {start_date} AND {end_date}
+      )
+      SELECT
+          symbol,
+          MAX_BY(close_price, trade_date) AS last_close,
+          EXP(SUM(log_return)) - 1 AS period_return,
+          STDDEV_SAMP(log_return) * SQRT(365) AS annualized_volatility,
+          MIN(close_price / running_peak - 1) AS max_drawdown,
+          COUNT(log_return) AS n_days,
+          MAX(trade_date) AS data_through
+      FROM days
+      GROUP BY symbol
+      ORDER BY symbol
+    outputs:
+      - {column: SYMBOL, unit: text, description: Asset pair.}
+      - {column: LAST_CLOSE, unit: price, description: Close of the last day in the period (USDT).}
+      - {column: PERIOD_RETURN, unit: fraction, description: Compounded return over the period.}
+      - {column: ANNUALIZED_VOLATILITY, unit: fraction_per_year, description: Annualized volatility.}
+      - {column: MAX_DRAWDOWN, unit: fraction, description: Largest fall below an earlier peak.}
+      - {column: N_DAYS, unit: count, description: Daily returns in the period.}
+      - {column: DATA_THROUGH, unit: date, description: Newest day with data in the period.}
+    row_key: [SYMBOL]
+    sample_column: N_DAYS
+    min_observations: 7
+    golden_case:
+      params: {symbols: "BTCUSDT,ETHUSDT,SOLUSDT", start_date: "2025-01-01", end_date: "2025-12-31"}
+      rows:
+        - {SYMBOL: BTCUSDT, LAST_CLOSE: 87648.22, PERIOD_RETURN: -0.0633472257843891,
+           ANNUALIZED_VOLATILITY: 0.416733691780036, MAX_DRAWDOWN: -0.320225152644977, N_DAYS: 365,
+           DATA_THROUGH: "2025-12-31"}
+        - {SYMBOL: ETHUSDT, LAST_CLOSE: 2971.64, PERIOD_RETURN: -0.10969566598158,
+           ANNUALIZED_VOLATILITY: 0.744413258426722, MAX_DRAWDOWN: -0.600425768484996, N_DAYS: 365,
+           DATA_THROUGH: "2025-12-31"}
+        - {SYMBOL: SOLUSDT, LAST_CLOSE: 124.65, PERIOD_RETURN: -0.341556177697956,
+           ANNUALIZED_VOLATILITY: 0.859791970731309, MAX_DRAWDOWN: -0.597663854639844, N_DAYS: 365,
+           DATA_THROUGH: "2025-12-31"}
+
+  - id: return_correlation_matrix
+    name: Correlation of daily returns for every pair of several assets
+    synonyms:
+      - correlation matrix
+      - pairwise correlation
+      - ma trận tương quan
+      - tương quan từng cặp
+    sql: CORR(a.daily_return, b.daily_return) for every pair a < b, on the days both have a return
+    unit: one row per pair, ratio from -1 to 1
+    definition: >
+      For every pair of assets of the list, the Pearson correlation of their daily returns over
+      the days of the period when both have a return, with that number of days.
+    pitfalls: >
+      Correlation is co-movement, not cause. Pairs with fewer than 30 common days are not used.
+    sources: [binance]
+    pit_mode: as_known
+    params:
+      - {name: symbols, type: symbol_list, description: 'Comma-separated asset pairs (at least two).'}
+      - {name: start_date, type: date, description: First day of the period.}
+      - {name: end_date, type: date, description: Last day of the period.}
+    template: |
+      SELECT
+          a.symbol AS symbol_a,
+          b.symbol AS symbol_b,
+          CORR(a.daily_return, b.daily_return) AS return_correlation,
+          COUNT(*) AS n_days
+      FROM FINSIGHT.MART.MART_ASSET_DAILY AS a
+      JOIN FINSIGHT.MART.MART_ASSET_DAILY AS b
+          ON b.trade_date = a.trade_date
+         AND b.symbol > a.symbol
+      WHERE a.symbol IN ({symbols})
+        AND b.symbol IN ({symbols})
+        AND a.trade_date BETWEEN {start_date} AND {end_date}
+        AND a.daily_return IS NOT NULL
+        AND b.daily_return IS NOT NULL
+      GROUP BY a.symbol, b.symbol
+      ORDER BY a.symbol, b.symbol
+    outputs:
+      - {column: SYMBOL_A, unit: text, description: First asset of the pair.}
+      - {column: SYMBOL_B, unit: text, description: Second asset of the pair.}
+      - {column: RETURN_CORRELATION, unit: ratio, description: Correlation of daily returns.}
+      - {column: N_DAYS, unit: count, description: Days both assets had a return.}
+    row_key: [SYMBOL_A, SYMBOL_B]
+    sample_column: N_DAYS
+    min_observations: 30
+    golden_case:
+      params: {symbols: "BTCUSDT,ETHUSDT,SOLUSDT", start_date: "2025-01-01", end_date: "2025-12-31"}
+      rows:
+        - {SYMBOL_A: BTCUSDT, SYMBOL_B: ETHUSDT, RETURN_CORRELATION: 0.815578027405349, N_DAYS: 365}
+        - {SYMBOL_A: BTCUSDT, SYMBOL_B: SOLUSDT, RETURN_CORRELATION: 0.799892403040227, N_DAYS: 365}
+        - {SYMBOL_A: ETHUSDT, SYMBOL_B: SOLUSDT, RETURN_CORRELATION: 0.790962245698642, N_DAYS: 365}
+
+  - id: risk_signals
+    name: Risk signals that fired in a period
+    synonyms:
+      - risk signal
+      - risk signals
+      - risk alert
+      - abnormal move
+      - volatility spike
+      - tín hiệu rủi ro
+      - cảnh báo rủi ro
+      - biến động bất thường
+    sql: Rows of MART_RISK_SIGNAL_DAILY (fixed rules of the risk_signal_rules seed), per asset and signal
+    unit: one row per asset and signal
+    definition: >
+      For each asset of the list and each rule that fired in the period: how many days it fired,
+      the last day, the rule's value that day and its threshold. Rules: abnormal_move (daily
+      return of at least 3 standard deviations of the previous 90 days), volatility_spike (30-day
+      volatility at least 2 times its median of the previous 180 days), drawdown_alert (20% or
+      more below the highest close of the last 90 days), tvl_drop (DeFi TVL of the asset's chain
+      down 15% or more in 7 days).
+    pitfalls: >
+      Signals describe past data by fixed rules; they are not forecasts or advice. No row means
+      no rule fired.
+    sources: [binance, defillama]
+    pit_mode: as_known
+    params:
+      - {name: symbols, type: symbol_list, description: 'Comma-separated asset pairs.'}
+      - {name: start_date, type: date, description: First day of the period.}
+      - {name: end_date, type: date, description: Last day of the period.}
+    template: |
+      SELECT
+          symbol,
+          signal_id,
+          COUNT(*) AS days_fired,
+          MAX(trade_date) AS last_fired,
+          MAX_BY(value, trade_date) AS last_value,
+          MAX_BY(threshold, trade_date) AS threshold,
+          MAX_BY(unit, trade_date) AS unit
+      FROM FINSIGHT.MART.MART_RISK_SIGNAL_DAILY
+      WHERE symbol IN ({symbols})
+        AND trade_date BETWEEN {start_date} AND {end_date}
+      GROUP BY symbol, signal_id
+      ORDER BY symbol, signal_id
+    outputs:
+      - {column: SYMBOL, unit: text, description: Asset pair.}
+      - {column: SIGNAL_ID, unit: text, description: Rule that fired.}
+      - {column: DAYS_FIRED, unit: count, description: Days in the period the rule fired.}
+      - {column: LAST_FIRED, unit: date, description: Last day it fired.}
+      - {column: LAST_VALUE, unit: ratio, unit_column: UNIT, description: The rule's value on that day.}
+      - {column: THRESHOLD, unit: ratio, unit_column: UNIT, description: The rule's threshold.}
+      - {column: UNIT, unit: text, description: Unit of value and threshold.}
+    row_key: [SYMBOL, SIGNAL_ID]
+    sample_column: DAYS_FIRED
+    min_observations: 1
+    allow_empty: true
+    golden_case:
+      params: {symbols: "BTCUSDT,ETHUSDT,SOLUSDT", start_date: "2025-01-01", end_date: "2025-12-31"}
+      # Computed independently in Python from MART_ASSET_DAILY and MART_CHAIN_TVL_DAILY with the
+      # seed's rules and calendar windows (2026-10-26), not from MART_RISK_SIGNAL_DAILY.
+      rows:
+        - {SYMBOL: BTCUSDT, SIGNAL_ID: abnormal_move, DAYS_FIRED: 4, LAST_FIRED: "2025-10-10", LAST_VALUE: 4.77994317218505, THRESHOLD: 3}
+        - {SYMBOL: BTCUSDT, SIGNAL_ID: drawdown_alert, DAYS_FIRED: 84, LAST_FIRED: "2025-12-31", LAST_VALUE: -0.296893578249833, THRESHOLD: -0.2}
+        - {SYMBOL: BTCUSDT, SIGNAL_ID: tvl_drop, DAYS_FIRED: 7, LAST_FIRED: "2025-04-23", LAST_VALUE: -0.18797367, THRESHOLD: -0.15}
+        - {SYMBOL: ETHUSDT, SIGNAL_ID: abnormal_move, DAYS_FIRED: 8, LAST_FIRED: "2025-10-10", LAST_VALUE: 3.47480413138564, THRESHOLD: 3}
+        - {SYMBOL: ETHUSDT, SIGNAL_ID: drawdown_alert, DAYS_FIRED: 168, LAST_FIRED: "2025-12-31", LAST_VALUE: -0.365577784846745, THRESHOLD: -0.2}
+        - {SYMBOL: SOLUSDT, SIGNAL_ID: abnormal_move, DAYS_FIRED: 6, LAST_FIRED: "2025-10-10", LAST_VALUE: 3.69917483092426, THRESHOLD: 3}
+        - {SYMBOL: SOLUSDT, SIGNAL_ID: drawdown_alert, DAYS_FIRED: 199, LAST_FIRED: "2025-12-31", LAST_VALUE: -0.46465383954647, THRESHOLD: -0.2}
+        - {SYMBOL: SOLUSDT, SIGNAL_ID: tvl_drop, DAYS_FIRED: 8, LAST_FIRED: "2025-11-18", LAST_VALUE: -0.16074461, THRESHOLD: -0.15}
+
+  - id: data_status
+    name: How complete and recent each asset's data is
+    synonyms:
+      - data status
+      - data coverage
+      - how recent
+      - độ tươi dữ liệu
+      - dữ liệu đến ngày nào
+    sql: MART_ASSET_UNIVERSE per asset; days_stale = days between the newest daily row and yesterday
+    unit: one row per asset
+    definition: >
+      For each asset of the list: first and newest day with daily data, number of days, and how
+      many days the newest one is behind yesterday (0 = up to date).
+    sources: [binance]
+    pit_mode: latest
+    params:
+      - {name: symbols, type: symbol_list, description: 'Comma-separated asset pairs.'}
+    template: |
+      SELECT
+          symbol,
+          data_from,
+          data_through,
+          n_days,
+          DATEDIFF('day', data_through, CURRENT_DATE()) - 1 AS days_stale
+      FROM FINSIGHT.MART.MART_ASSET_UNIVERSE
+      WHERE symbol IN ({symbols})
+      ORDER BY symbol
+    outputs:
+      - {column: SYMBOL, unit: text, description: Asset pair.}
+      - {column: DATA_FROM, unit: date, description: First day with daily data.}
+      - {column: DATA_THROUGH, unit: date, description: Newest day with daily data.}
+      - {column: N_DAYS, unit: count, description: Days with daily data.}
+      - {column: DAYS_STALE, unit: count, description: Days the newest data is behind yesterday.}
+    row_key: [SYMBOL]
+    sample_column: N_DAYS
+    min_observations: 1
+    golden_case:
+      params: {symbols: "BTCUSDT,ETHUSDT"}
+      # Only values that do not move every day.
+      rows:
+        - {SYMBOL: BTCUSDT, DATA_FROM: "2019-01-01"}
+        - {SYMBOL: ETHUSDT, DATA_FROM: "2019-01-01"}

@@ -14,7 +14,7 @@ from typing import Any
 
 from src.agents.state import Attempt
 from src.agents.tools.schema_tools import get_schema_context
-from src.semantic.layer import load_semantic_layer
+from src.semantic.layer import load_semantic_layer, with_universe
 from src.semantic.retriever import format_context, retrieve
 from src.services.llm import LLMClient, LLMUsage
 
@@ -86,7 +86,7 @@ def prepare_prompt(question: str, warehouse: Any, today: date | None = None) -> 
     """Read the schema from Snowflake and the semantic layer from disk; no LLM call."""
 
     schema = get_schema_context(warehouse)
-    knowledge = retrieve(question, load_semantic_layer())
+    knowledge = retrieve(question, with_universe(load_semantic_layer(), schema.universe))
     logger.info("Semantic context: %s", ", ".join(knowledge.ids) or "(no concept matched)")
     user = build_user_prompt(
         question,

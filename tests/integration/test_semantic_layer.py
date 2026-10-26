@@ -12,7 +12,7 @@ from typing import Any
 import pytest
 
 from src.agents.text_to_sql import agent_warehouse
-from src.agents.tools.schema_tools import SCHEMA_SQL, get_schema_context
+from src.agents.tools.schema_tools import SCHEMA_SQL, UNIVERSE_SQL, get_schema_context
 from src.semantic.layer import load_semantic_layer
 from src.services.snowflake_client import SnowflakeClient
 from src.services.sql_guard import SQLGuard
@@ -30,10 +30,17 @@ def warehouse() -> SnowflakeClient:
     return agent_warehouse()
 
 
-def test_glossary_assets_are_exactly_the_symbols_in_mart(warehouse: SnowflakeClient) -> None:
-    rows = warehouse.execute("SELECT DISTINCT symbol FROM FINSIGHT.MART.MART_ASSET_DAILY")
+def test_glossary_assets_are_the_core_assets_and_all_are_in_the_universe(
+    warehouse: SnowflakeClient,
+) -> None:
+    rows = warehouse.execute(UNIVERSE_SQL)
+    ready = {row["SYMBOL"] for row in rows if row["STATUS"] == "ready"}
+    core = {row["SYMBOL"] for row in rows if row["IS_CORE"]}
 
-    assert {row["SYMBOL"] for row in rows} == {a.symbol for a in LAYER.coverage.assets}
+    assert {a.symbol for a in LAYER.coverage.assets} == core
+    assert core <= ready
+    daily = warehouse.execute("SELECT DISTINCT symbol FROM FINSIGHT.MART.MART_ASSET_DAILY")
+    assert {row["SYMBOL"] for row in daily} <= {row["SYMBOL"] for row in rows}
 
 
 def test_glossary_macro_series_are_real_mart_columns(warehouse: SnowflakeClient) -> None:

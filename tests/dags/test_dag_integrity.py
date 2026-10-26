@@ -28,7 +28,7 @@ def dagbag() -> DagBag:
 
 def test_every_dag_file_imports_without_errors(dagbag: DagBag) -> None:
     assert dagbag.import_errors == {}
-    assert "finsight_daily" in dagbag.dags
+    assert {"finsight_daily", "finsight_asset_onboarding"} <= set(dagbag.dags)
 
 
 def test_the_daily_pipeline_runs_its_steps_in_order(dagbag: DagBag) -> None:
@@ -43,7 +43,42 @@ def test_the_daily_pipeline_runs_its_steps_in_order(dagbag: DagBag) -> None:
         "check_source_freshness": ["dbt_build_staging"],
         "dbt_build_staging": ["dbt_build_core"],
         "dbt_build_core": ["dbt_build_marts"],
-        "dbt_build_marts": [],
+        "dbt_build_marts": ["generate_daily_brief"],
+        "generate_daily_brief": [],
+        "refresh_binance_catalog": [],
+    }
+
+
+def test_onboarding_loads_then_builds_then_marks_ready(dagbag: DagBag) -> None:
+    dag = dagbag.dags["finsight_asset_onboarding"]
+
+    downstream = {task.task_id: sorted(task.downstream_task_ids) for task in dag.tasks}
+
+    assert downstream == {
+        "load_requested_assets": ["dbt_build_assets"],
+        "dbt_build_assets": ["finalize_assets"],
+        "finalize_assets": [],
+    }
+    assert dag.max_active_runs == 1
+
+
+def test_both_dags_share_one_binance_job_and_one_dbt_build_at_a_time(dagbag: DagBag) -> None:
+    pools = {
+        (dag_id, task.task_id): task.pool
+        for dag_id in ("finsight_daily", "finsight_asset_onboarding")
+        for task in dagbag.dags[dag_id].tasks
+    }
+
+    assert {k for k, pool in pools.items() if pool == "binance_api"} == {
+        ("finsight_daily", "load_binance"),
+        ("finsight_daily", "refresh_binance_catalog"),
+        ("finsight_asset_onboarding", "load_requested_assets"),
+    }
+    assert {k for k, pool in pools.items() if pool == "dbt"} == {
+        ("finsight_daily", "dbt_build_staging"),
+        ("finsight_daily", "dbt_build_core"),
+        ("finsight_daily", "dbt_build_marts"),
+        ("finsight_asset_onboarding", "dbt_build_assets"),
     }
 
 
@@ -54,4 +89,6 @@ def test_the_daily_pipeline_never_overlaps_or_replays_missed_days(dagbag: DagBag
 
     assert dag.catchup is False
     assert dag.max_active_runs == 1
-    assert all(task.retries == 2 for task in dag.tasks)
+    # The brief retries once only: each attempt may spend LLM budget.
+    retries = {task.task_id: task.retries for task in dag.tasks if task.retries != 2}
+    assert retries == {"generate_daily_brief": 1}

@@ -43,3 +43,14 @@ sources:
             warn_after: {count: 36, period: hour}
             error_after: {count: 60, period: hour}
 
+  - name: control
+    description: >
+      Operating state written by the API and the onboarding job (infra/snowflake/04_control_tables.sql).
+      Not market data: which assets the owner added and how far their onboarding got.
+    database: "{{ target.database }}"
+    schema: CONTROL
+    tables:
+      - name: asset_registry
+        description: >
+          Assets added beyond the core four. Grain symbol. status: requested, validating,
+          backfilling, ready, unsupported, error, disabled.

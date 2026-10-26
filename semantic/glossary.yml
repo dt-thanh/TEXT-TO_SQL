@@ -4,8 +4,10 @@
 # the data at all?), so it is ALWAYS in the prompt. `terms` are shown only when the question
 # uses one of their synonyms, like metrics.yml.
 #
-# Keep `assets` equal to the symbols in MART and `defi_chains` equal to the chains in
-# MART_CHAIN_TVL_DAILY: tests/integration/test_semantic_layer.py checks both.
+# `assets` holds the hand-written names and synonyms of the four core assets. At run time the
+# list shown is the ready assets of MART_ASSET_UNIVERSE (core + coins the owner added), with
+# these entries for the core ones (src/semantic/layer.py, with_universe). `defi_chains` must
+# equal the chains in MART_CHAIN_TVL_DAILY: tests/integration/test_semantic_layer.py checks it.
 
 coverage:
   assets:
@@ -45,7 +47,7 @@ coverage:
       name: DeFi TVL on all chains together (DefiLlama), USD
       synonyms: [defi, all chains, toàn bộ defi]
   not_covered: >
-    Stocks and shares, stock indexes, other crypto coins, forex, commodities, unemployment,
+    Stocks and shares, stock indexes, crypto coins not listed above, forex, commodities, unemployment,
     inflation measures other than headline CPI, news, and on-chain data other than DeFi TVL (no transactions, addresses,
     fees, stablecoin supply or single-protocol TVL).
 

@@ -37,8 +37,25 @@ def test_the_template_returns_its_golden_values(
     assert checked.is_valid, checked.error
 
     rows = warehouse.execute(checked.sql, max_rows=100)
+    golden = metric.golden_case
 
-    assert len(rows) == 1
-    for column, expected in metric.golden_case.expected.items():
-        actual = float(rows[0][column])
-        assert metric.golden_case.matches(column, actual), f"{column}: {actual} != {expected}"
+    if not metric.row_key:
+        assert len(rows) == 1
+        for column, expected in golden.expected.items():
+            actual = float(rows[0][column])
+            assert golden.matches(column, actual), f"{column}: {actual} != {expected}"
+        return
+
+    # Multi-row: every expected row is found by its key, with its values.
+    by_key = {tuple(str(row[c]) for c in metric.row_key): row for row in rows}
+    assert len(rows) == len(golden.rows)
+    for expected in golden.rows:
+        key = tuple(str(expected[c]) for c in metric.row_key)
+        assert key in by_key, f"missing row {key}"
+        for column, value in expected.items():
+            actual = by_key[key][column]
+            if isinstance(value, str):
+                assert str(actual) == value, f"{key} {column}: {actual} != {value}"
+            else:
+                tolerance = golden.tolerance * max(1.0, abs(value))
+                assert abs(float(actual) - value) <= tolerance, f"{key} {column}: {actual}"

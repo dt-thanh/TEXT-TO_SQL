@@ -1,0 +1,6 @@
+signal_id,signal_name,definition,unit,comparison,threshold,window_days,min_observations
+abnormal_move,Abnormal daily move,"Size of the day's return in standard deviations of the daily returns of the previous window_days days (the day itself excluded)",sigma,>=,3,90,60
+volatility_spike,Volatility spike,"30-day volatility divided by the median 30-day volatility of the previous window_days days",ratio,>=,2,180,120
+drawdown_alert,Drawdown alert,"Close divided by the highest close of the last window_days days (the day itself included), minus 1",fraction,<=,-0.2,90,30
+tvl_drop,Chain TVL drop,"7-day change of DeFi TVL on the chain mapped to the asset (dim_chain); needs min_observations days of TVL",fraction,<=,-0.15,30,30
+high_correlation,High correlation,"Correlation of daily returns of two watchlist assets over window_days days; computed when a brief is made",ratio,>=,0.9,30,25

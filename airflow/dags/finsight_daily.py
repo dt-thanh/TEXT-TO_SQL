@@ -1,4 +1,5 @@
-"""FinSight daily pipeline: load new source data into RAW, then rebuild STAGING → CORE → MART.
+"""FinSight daily pipeline: load new source data into RAW, rebuild STAGING → CORE → MART, then
+write the daily brief of every watchlist.
 
 Airflow only decides WHEN each step runs, in WHAT ORDER, and what to do on failure. Every step
 is a command that already works by hand (make load-binance, make load-fred, make load-defillama,
@@ -12,6 +13,14 @@ from airflow.sdk import DAG
 
 PROJECT_DIR = "/opt/finsight"  # the repo, mounted by airflow/docker-compose.yml
 VENV = "/opt/finsight-venv/bin"  # FinSight's own packages, installed by airflow/Dockerfile
+# Shared with finsight_asset_onboarding (pools are created by airflow-init): one Binance job and
+# one dbt build at a time across both DAGs.
+BINANCE_POOL = "binance_api"
+DBT_POOL = "dbt"
+
+
+def python(module: str) -> str:
+    return f"cd {PROJECT_DIR} && {VENV}/python -m {module}"
 
 
 def dbt(command: str) -> str:
@@ -44,19 +53,23 @@ with DAG(
     default_args=default_args,
     tags=["finsight"],
 ) as dag:
+    # Core assets plus every asset the owner added that is ready (CONTROL.ASSET_REGISTRY).
     load_binance = BashOperator(
-        task_id="load_binance",
-        bash_command=f"cd {PROJECT_DIR} && {VENV}/python -m scripts.load_binance",
+        task_id="load_binance", bash_command=python("scripts.load_binance"), pool=BINANCE_POOL
     )
 
-    load_fred = BashOperator(
-        task_id="load_fred",
-        bash_command=f"cd {PROJECT_DIR} && {VENV}/python -m scripts.load_fred",
-    )
+    load_fred = BashOperator(task_id="load_fred", bash_command=python("scripts.load_fred"))
 
     load_defillama = BashOperator(
-        task_id="load_defillama",
-        bash_command=f"cd {PROJECT_DIR} && {VENV}/python -m scripts.load_defillama",
+        task_id="load_defillama", bash_command=python("scripts.load_defillama")
+    )
+
+    # The USDT spot pairs Binance trades, so the API can check a requested coin without
+    # calling Binance. Nothing downstream needs it today: it runs beside the pipeline.
+    refresh_binance_catalog = BashOperator(
+        task_id="refresh_binance_catalog",
+        bash_command=python("scripts.onboard_assets refresh-catalog"),
+        pool=BINANCE_POOL,
     )
 
     # A load can "succeed" with nothing new (an API that stopped updating, a stuck watermark).
@@ -73,19 +86,32 @@ with DAG(
     dbt_staging = BashOperator(
         task_id="dbt_build_staging",
         bash_command=dbt("build --select path:seeds path:models/staging"),
+        pool=DBT_POOL,
     )
 
     dbt_core = BashOperator(
         task_id="dbt_build_core",
         bash_command=dbt("build --select path:models/core"),
+        pool=DBT_POOL,
     )
 
     dbt_marts = BashOperator(
         task_id="dbt_build_marts",
         bash_command=dbt("build --select path:models/marts"),
+        pool=DBT_POOL,
+    )
+
+    # The morning brief of every watchlist, saved in CONTROL.DAILY_BRIEF for the UI. Only after
+    # the marts are built, so it never describes yesterday's data as today's. One retry: each
+    # attempt may cost LLM calls (bounded by the daily cap), and a failure here leaves the
+    # loaded data untouched.
+    daily_brief = BashOperator(
+        task_id="generate_daily_brief",
+        bash_command=python("scripts.daily_brief"),
+        retries=1,
     )
 
     # The loads can run at the same time (different sources, different RAW tables);
     # the freshness check waits for all of them, then the layers go bottom-up.
     loads = [load_binance, load_fred, load_defillama]
-    loads >> check_freshness >> dbt_staging >> dbt_core >> dbt_marts
+    loads >> check_freshness >> dbt_staging >> dbt_core >> dbt_marts >> daily_brief

@@ -27,6 +27,27 @@ class Settings(BaseSettings):
     snowflake_agent_role: str = "FINSIGHT_AGENT"
     snowflake_agent_private_key_path: Path | None = None
 
+    # The API writes watchlists, asset requests and usage as its own user with FINSIGHT_APP:
+    # rows of the CONTROL schema only (infra/snowflake/03_control_access.sql).
+    snowflake_app_user: str = ""
+    snowflake_app_role: str = "FINSIGHT_APP"
+    snowflake_app_private_key_path: Path | None = None
+
+    # Airflow's REST API, to start asset onboarding right after a request. Empty URL: no
+    # trigger, the daily fallback run picks the request up.
+    airflow_api_url: str = ""
+    airflow_api_user: str = ""
+    airflow_api_password: SecretStr = SecretStr("")
+
+    # local: API and UI listen on 127.0.0.1 only, no key. deployed: every request except
+    # /health needs X-API-Key = FINSIGHT_SERVICE_KEY, and the API refuses to start without it.
+    auth_mode: Literal["local", "deployed"] = "local"
+    finsight_service_key: SecretStr = SecretStr("")
+    # All LLM calls of one UTC day together (API and scheduled briefs) stop at this many USD.
+    llm_daily_cost_cap_usd: float = 1.0
+    # Language of the scheduled daily brief.
+    brief_language: Literal["en", "vi"] = "en"
+
     binance_base_url: str = "https://api.binance.com"
 
     fred_api_key: SecretStr = SecretStr("")
@@ -44,6 +65,7 @@ class Settings(BaseSettings):
     llm_reasoning_effort: Literal["minimal", "low", "medium", "high"] | None = None
 
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
+    log_format: Literal["text", "json"] = "text"
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -68,18 +90,23 @@ class Settings(BaseSettings):
     def for_agent(self) -> "Settings":
         """The same settings, but connecting as the read-only Text-to-SQL agent user."""
 
-        missing = [
-            name.upper()
-            for name in ("snowflake_agent_user", "snowflake_agent_private_key_path")
-            if not getattr(self, name)
-        ]
+        return self._as_service_user("agent")
+
+    def for_app(self) -> "Settings":
+        """The same settings, but connecting as the API's CONTROL-only user."""
+
+        return self._as_service_user("app")
+
+    def _as_service_user(self, who: Literal["agent", "app"]) -> "Settings":
+        names = (f"snowflake_{who}_user", f"snowflake_{who}_private_key_path")
+        missing = [name.upper() for name in names if not getattr(self, name)]
         if missing:
-            raise ConfigError(f"Missing agent Snowflake settings in .env: {', '.join(missing)}")
+            raise ConfigError(f"Missing {who} Snowflake settings in .env: {', '.join(missing)}")
         return self.model_copy(
             update={
-                "snowflake_user": self.snowflake_agent_user,
-                "snowflake_role": self.snowflake_agent_role,
-                "snowflake_private_key_path": self.snowflake_agent_private_key_path,
+                "snowflake_user": getattr(self, f"snowflake_{who}_user"),
+                "snowflake_role": getattr(self, f"snowflake_{who}_role"),
+                "snowflake_private_key_path": getattr(self, f"snowflake_{who}_private_key_path"),
                 "snowflake_private_key_passphrase": None,
             }
         )

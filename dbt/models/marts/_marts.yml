@@ -280,3 +280,158 @@ models:
         description: "{{ doc('defi_tvl_usd') }}"
       - name: defi_tvl_change_7d
         description: "{{ doc('tvl_change_7d') }}"
+
+  - name: mart_asset_universe
+    description: >
+      Every crypto asset in the data, one row each: the four core assets and the coins the owner
+      added. Use it to know which symbols exist and from when; prices are in MART_ASSET_DAILY.
+    columns:
+      - name: symbol
+        description: "{{ doc('symbol') }}"
+        data_tests: [unique, not_null]
+      - name: asset_key
+        description: The coin's identity, exchange:baseAsset (e.g. BINANCE:ETH).
+        data_tests: [unique, not_null]
+      - name: base_asset
+        description: The coin's ticker on Binance (ETH for ETHUSDT).
+      - name: display_name
+        description: The asset's name (Ethereum); the ticker for added coins.
+      - name: is_core
+        description: True for the four assets with history since 2019 (BTC, ETH, SOL, BNB).
+      - name: chain_slug
+        description: The DefiLlama chain whose TVL belongs to this asset; NULL when none is mapped.
+      - name: data_from
+        description: First UTC day with a daily row.
+      - name: data_through
+        description: Newest finished UTC day with a daily row.
+      - name: n_days
+        description: Number of days with a daily row.
+      - name: status
+        description: ready (has daily data), loading (added, not loaded yet) or disabled.
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [ready, loading, disabled]
+
+  - name: mart_risk_signal_daily
+    description: >
+      Risk signals by fixed rules, one row per asset, day and signal when the signal fired.
+      Signals describe past data; they are not forecasts or advice. Rules: risk_signal_rules seed.
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [trade_date, symbol, signal_id]
+    columns:
+      - name: trade_date
+        description: "{{ doc('trade_date') }}"
+        data_tests: [not_null]
+      - name: symbol
+        description: "{{ doc('symbol') }}"
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_asset')
+                field: symbol
+      - name: signal_id
+        description: abnormal_move, volatility_spike, drawdown_alert or tvl_drop.
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [abnormal_move, volatility_spike, drawdown_alert, tvl_drop]
+      - name: signal_name
+        description: Readable name of the rule.
+      - name: value
+        description: The rule's value that day, in `unit` (sigma, ratio or fraction).
+      - name: threshold
+        description: The rule's threshold; the signal fired because value compared to it as `comparison` says.
+      - name: comparison
+        description: ">= or <=."
+      - name: unit
+        description: sigma (standard deviations), ratio, or fraction (-0.2 = -20%).
+      - name: window_days
+        description: Calendar days the rule looked back.
+      - name: n_obs
+        description: "Observations in the window (for tvl_drop: days of TVL history so far)."
+      - name: is_retrospective
+        description: For tvl_drop, true when the TVL value was not available at the time (backfill or revision); NULL for the other signals.
+
+unit_tests:
+  # Small windows (3 days, 2 observations) through a mocked rules seed, so each case is a few rows.
+  - name: risk_signals_fire_at_the_threshold_and_not_below
+    description: "RISK-02: a drawdown of exactly -20% fires (<=); -19% does not."
+    model: mart_risk_signal_daily
+    given:
+      - input: ref('risk_signal_rules')
+        rows:
+          - {signal_id: drawdown_alert, signal_name: Drawdown alert, unit: fraction, comparison: "<=", threshold: -0.2, window_days: 3, min_observations: 2}
+      - input: ref('mart_asset_daily')
+        rows:
+          - {trade_date: 2025-01-01, symbol: AAAUSDT, close_price: 100}
+          - {trade_date: 2025-01-02, symbol: AAAUSDT, close_price: 80}
+          - {trade_date: 2025-01-01, symbol: BBBUSDT, close_price: 100}
+          - {trade_date: 2025-01-02, symbol: BBBUSDT, close_price: 81}
+      - input: ref('mart_chain_tvl_daily')
+        rows: []
+    expect:
+      rows:
+        - {trade_date: 2025-01-02, symbol: AAAUSDT, signal_id: drawdown_alert, value: -0.2, n_obs: 2}
+
+  - name: risk_signals_need_enough_observations
+    description: "RISK-03: a newly listed asset with one day of history gets no signal and no made-up value."
+    model: mart_risk_signal_daily
+    given:
+      - input: ref('risk_signal_rules')
+        rows:
+          - {signal_id: drawdown_alert, signal_name: Drawdown alert, unit: fraction, comparison: "<=", threshold: -0.2, window_days: 3, min_observations: 2}
+      - input: ref('mart_asset_daily')
+        rows:
+          - {trade_date: 2025-01-02, symbol: NEWUSDT, close_price: 50}
+      - input: ref('mart_chain_tvl_daily')
+        rows: []
+    expect:
+      rows: []
+
+  - name: abnormal_move_uses_only_days_before_the_signal_day
+    description: >
+      RISK-01/RISK-04: the standard deviation comes from the 3 days BEFORE the day. Past returns
+      0.01, -0.01, 0.01 have sample sd 0.011547; a 0.04 move is 3.464 sd (fires), 0.03 is 2.598.
+      Day 5 returns to normal: its window contains the 0.04 move, which must not fire day 5.
+    model: mart_risk_signal_daily
+    given:
+      - input: ref('risk_signal_rules')
+        rows:
+          - {signal_id: abnormal_move, signal_name: Abnormal daily move, unit: sigma, comparison: ">=", threshold: 3, window_days: 3, min_observations: 3}
+      - input: ref('mart_asset_daily')
+        rows:
+          - {trade_date: 2025-01-01, symbol: AAAUSDT, daily_return: 0.01}
+          - {trade_date: 2025-01-02, symbol: AAAUSDT, daily_return: -0.01}
+          - {trade_date: 2025-01-03, symbol: AAAUSDT, daily_return: 0.01}
+          - {trade_date: 2025-01-04, symbol: AAAUSDT, daily_return: 0.04}
+          - {trade_date: 2025-01-05, symbol: AAAUSDT, daily_return: 0.01}
+          - {trade_date: 2025-01-01, symbol: BBBUSDT, daily_return: 0.01}
+          - {trade_date: 2025-01-02, symbol: BBBUSDT, daily_return: -0.01}
+          - {trade_date: 2025-01-03, symbol: BBBUSDT, daily_return: 0.01}
+          - {trade_date: 2025-01-04, symbol: BBBUSDT, daily_return: 0.03}
+      - input: ref('mart_chain_tvl_daily')
+        rows: []
+    expect:
+      rows:
+        - {trade_date: 2025-01-04, symbol: AAAUSDT, signal_id: abnormal_move, n_obs: 3}
+
+  - name: tvl_drop_only_for_mapped_chains
+    description: "DYN-08: TVL of a chain without an asset (All) never becomes an asset signal."
+    model: mart_risk_signal_daily
+    given:
+      - input: ref('risk_signal_rules')
+        rows:
+          - {signal_id: tvl_drop, signal_name: Chain TVL drop, unit: fraction, comparison: "<=", threshold: -0.15, window_days: 30, min_observations: 1}
+      - input: ref('mart_asset_daily')
+        rows: []
+      - input: ref('mart_chain_tvl_daily')
+        rows:
+          - {tvl_date: 2025-01-08, chain: Ethereum, related_symbol: ETHUSDT, tvl_change_7d: -0.2, is_retrospective: true}
+          - {tvl_date: 2025-01-08, chain: All, related_symbol: null, tvl_change_7d: -0.3, is_retrospective: true}
+    expect:
+      rows:
+        - {trade_date: 2025-01-08, symbol: ETHUSDT, signal_id: tvl_drop, value: -0.2, is_retrospective: true}

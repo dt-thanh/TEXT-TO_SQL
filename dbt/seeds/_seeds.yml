@@ -36,3 +36,23 @@ seeds:
       - name: related_symbol
         description: Binance pair of the chain's native asset, e.g. ETHUSDT.
 
+  - name: risk_signal_rules
+    description: >
+      Risk signal rules (spec v1.1, 4.6): fixed definitions with a threshold, unit, window and
+      minimum number of observations. Thresholds are starting points: changing one is a reviewed
+      change with its reason (docs/risk_signals.md), never a fit to a known answer.
+    config:
+      column_types:
+        threshold: number(38,6)
+        window_days: integer
+        min_observations: integer
+    columns:
+      - name: signal_id
+        description: Stable id used by mart_risk_signal_daily and the brief.
+        data_tests: [unique, not_null]
+      - name: comparison
+        description: ">= or <=: the signal fires when the value compares so to the threshold."
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [">=", "<="]

@@ -4,7 +4,16 @@ import os
 
 import pytest
 
-PROJECT_ENV_PREFIXES = ("SNOWFLAKE_", "FRED_", "OPENAI_", "LLM_", "LOG_")
+PROJECT_ENV_PREFIXES = (
+    "SNOWFLAKE_",
+    "FRED_",
+    "OPENAI_",
+    "LLM_",
+    "LOG_",
+    "AIRFLOW_API_",
+    "AUTH_",
+    "FINSIGHT_",
+)
 
 
 @pytest.fixture(autouse=True)

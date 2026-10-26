@@ -115,8 +115,10 @@ def test_a_synonym_needs_its_words_next_to_each_other() -> None:
         ("Show the 20-day moving average of BTC", {"moving_average"}),
         ("Tổng lợi nhuận của ETH trong năm 2025?", {"period_return"}),
         ("Lãi suất Fed hiện tại là bao nhiêu?", {"fed_funds_rate"}),
-        ("Days when the 10-year yield rose from the previous day",
-         {"treasury_10y", "previous_day_change"}),
+        (
+            "Days when the 10-year yield rose from the previous day",
+            {"treasury_10y", "previous_day_change"},
+        ),
         ("Khối lượng giao dịch của BNB tháng trước", {"trading_volume"}),
     ],
 )
@@ -176,3 +178,25 @@ def test_matched_definitions_bring_their_sql_and_pitfalls_and_nothing_else() -> 
     assert "Never AVG(volatility_30d)" in text
     assert 'question says: "độ biến động", "biến động", "quy ra năm"' in text
     assert "EXP(SUM(log_return))" not in text.split("# Verified examples")[0]  # period_return
+
+
+def test_coverage_follows_the_ready_assets_of_the_universe() -> None:
+    from src.semantic.layer import with_universe
+
+    def row(symbol: str, base: str, name: str, core: bool, status: str) -> dict:
+        return {"SYMBOL": symbol, "BASE_ASSET": base, "DISPLAY_NAME": name, "IS_CORE": core,
+                "STATUS": status}  # fmt: skip
+
+    universe = [
+        row("BTCUSDT", "BTC", "Bitcoin", True, "ready"),
+        row("LINKUSDT", "LINK", "LINK", False, "ready"),
+        row("ARBUSDT", "ARB", "ARB", False, "loading"),
+    ]
+
+    layer = with_universe(LAYER, universe)
+
+    assets = {a.symbol: a for a in layer.coverage.assets}
+    assert list(assets) == ["BTCUSDT", "LINKUSDT"]  # loading assets are not shown
+    assert assets["BTCUSDT"] == next(a for a in LAYER.coverage.assets if a.symbol == "BTCUSDT")
+    assert assets["LINKUSDT"].synonyms == ["link"]
+    assert with_universe(LAYER, []) is LAYER  # no universe yet: the glossary as written
