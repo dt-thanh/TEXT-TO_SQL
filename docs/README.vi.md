@@ -34,6 +34,22 @@ chạy và **hiển thị SQL** cùng kết quả.
   trong catalog, SQL lấy từ template, mọi con số trong kết luận được code đối chiếu với evidence
   (`POST /research`, tab Research, `make research Q="..."`). Chi tiết: [upgrade_baseline.md](upgrade_baseline.md),
   [architecture.md](architecture.md).
+- Nâng cấp **FinSight Pulse** (2026-10-26), dùng cho một chủ sở hữu:
+  - **thêm coin lúc chạy**: gõ tự do, kiểm tra với danh mục Binance, gõ sai có gợi ý; Airflow tự tải 365 ngày lịch sử;
+  - **watchlist** có tên;
+  - **tín hiệu rủi ro bằng luật** trong dbt (đã đo tần suất bật);
+  - **Daily Brief** tự chạy mỗi sáng và lưu vào Snowflake;
+  - tab Hỏi đáp và Báo cáo nghiên cứu dạng **chat** (hỏi nối tiếp được), nút VI/EN;
+  - bảo vệ truy cập (localhost hoặc khóa dịch vụ), rate limit, trần chi phí LLM theo ngày, request id xuyên suốt
+    tới Snowflake;
+  - cấu hình deploy và rollback theo tag.
+
+  Hướng dẫn cài đặt và vận hành phần này: [operations.md](operations.md). Thay đổi và kết quả đo: [pulse.md](pulse.md).
+  Giáo trình học toàn bộ dự án (tiếng Việt): [FINSIGHT_LEARNING.md](../FINSIGHT_LEARNING.md), Phần II.
+
+> Các mục cài đặt bên dưới viết cho hệ thống gốc và vẫn đúng. Riêng phần FinSight Pulse cần thêm 2 file SQL
+> `infra/snowflake/03_control_access.sql`, `04_control_tables.sql` và các biến `SNOWFLAKE_APP_*`, `AIRFLOW_API_*`,
+> `AUTH_MODE`, `LLM_DAILY_COST_CAP_USD` trong `.env`: xem [operations.md](operations.md).
 
 ## Cài đặt
 

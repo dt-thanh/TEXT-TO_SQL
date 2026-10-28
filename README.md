@@ -16,20 +16,25 @@ The project has four parts, built to production habits rather than demo shortcut
   Funds rate, 10-year Treasury yield and CPI, with every revision) and DefiLlama (daily DeFi TVL of each
   asset's chain and of all chains) are loaded idempotently into Snowflake, modeled with dbt into
   point-in-time correct marts, and refreshed daily by Airflow.
-- **A Text-to-SQL agent (Quick SQL), as a chat.** A LangGraph workflow writes SQL with an LLM,
+- **Quick SQL: a Text-to-SQL workflow, as a chat.** A LangGraph workflow writes SQL with an LLM,
   checks it with a sqlglot-based guard, runs it as a read-only Snowflake role, and repairs its
   own mistakes a bounded number of times. Follow-ups ("and ETH?") are rewritten into standalone
   questions, and the rewrite is shown. Greetings and requests for investment advice are answered
   by rules, with no LLM call and no SQL.
 - **A research mode.** For multi-step questions the model only plans with a catalog of verified
   metrics; code writes the SQL from templates; the model states findings; code checks every
-  number against the evidence. FastAPI and a Streamlit screen serve both modes.
+  number against the evidence.
 - **FinSight Pulse.** Watchlists of coins the owner picks: any USDT pair Binance trades. A typed
   coin is checked against the exchange and a typo gets "did you mean". Its history is backfilled
   by Airflow with the same loaders. Risk signals are computed by fixed, tested rules in dbt.
   Every morning a Daily Brief is built from verified SQL, with the same grounding check. One
   owner, no accounts; endpoints bound to localhost or behind a service key, and a daily LLM cost
   cap ([docs/pulse.md](docs/pulse.md), [docs/operations.md](docs/operations.md)).
+
+FastAPI serves all of it; a Streamlit client has three tabs (Ask, Research report, Watchlist &
+Daily Brief) in Vietnamese or English. These are **LLM workflows, not autonomous agents**: code
+decides every step and its limits; the model only writes SQL, picks catalog metrics, rewrites a
+follow-up or phrases findings, and code checks each of those outputs.
 
 ## Results
 
@@ -65,9 +70,9 @@ are never used to tune anything.
 | Findings dropped by the number check | 0 of 26 |
 | Latency, cost per brief | p50 4.3 s, p95 9.1 s; ~$0.003 |
 
-Tests: 487 Python tests (413 unit, 74 integration on Snowflake and the live APIs, DAG integrity),
-123 dbt data tests and 4 dbt unit tests for the risk rules, CI on every push. A perfect score on a few dozen questions is not a perfect system: the
-intervals above are the honest reading.
+Tests: 506 Python tests (431 unit, 75 integration on Snowflake and the live APIs, DAG integrity),
+123 dbt data tests and 4 dbt unit tests for the risk rules, CI on every push. A perfect score on a
+few dozen questions is not a perfect system: the intervals above are the honest reading.
 
 The benchmarks are small and the confidence intervals say so. Model choice and prompt changes are
 compared with repeated runs (see [Engineering notes](#engineering-notes)).
@@ -90,7 +95,7 @@ flowchart LR
     AF[Airflow daily DAG] -. schedules .-> B & F & D
     AF -. "dbt build + freshness" .-> STG
     MART --> AG
-    subgraph Agent["Text-to-SQL agent (LangGraph)"]
+    subgraph Agent["Quick SQL workflow (LangGraph)"]
         AG[retrieve schema + semantic layer] --> GEN[LLM writes SQL] --> G{SQL guard}
         G -- valid --> EX[run as read-only role]
         G -- fixable --> REP[repair with the error]
@@ -119,11 +124,11 @@ flowchart LR
 | Warehouse | RAW → STAGING → CORE → MART with dbt; point-in-time macro join; known-answer and freshness tests | [dbt/](dbt/) |
 | Orchestration | Airflow 3 in Docker; loads → freshness check → dbt layer by layer → daily brief; on-demand asset onboarding sharing pools with the daily run | [airflow/](airflow/) |
 | Pulse | Asset universe (any USDT pair Binance trades, typed and checked), watchlists, risk signals by rule in dbt, Daily Brief, single-owner protections (localhost or a service key, rate limits, daily LLM cost cap) | [src/control/](src/control/), [docs/pulse.md](docs/pulse.md) |
-| Agent | Quick SQL: retrieve context → generate → validate → execute → repair. Research: plan → execute templates → write → grounding check | [src/agents/](src/agents/) |
+| LLM workflows | Quick SQL: retrieve context → generate → validate → execute → repair. Research: plan → execute templates → write → grounding check. Daily Brief: the research graph with a plan built in code. Chat: rules, then a follow-up rewriter | [src/agents/](src/agents/) |
 | Semantic layer | Metric definitions with SQL templates and golden cases, glossary, verified example queries, all in YAML | [semantic/](semantic/) |
-| Safety | AST-based SQL guard + least-privilege Snowflake role + timeouts | [src/services/sql_guard.py](src/services/sql_guard.py), [infra/snowflake/](infra/snowflake/) |
+| Safety | AST-based SQL guard, three Snowflake identities (pipeline writes, agent reads MART only, API touches CONTROL rows only), timeouts, rate limits, a daily LLM cost cap | [src/services/sql_guard.py](src/services/sql_guard.py), [src/api/security.py](src/api/security.py), [infra/snowflake/](infra/snowflake/) |
 | Serving | FastAPI contract, Streamlit thin client (no secrets in the UI) with chat tabs, VI/EN, request ids in responses, logs and Snowflake query tags | [src/api/](src/api/), [ui/](ui/) |
-| Evaluation | Execution accuracy and a research benchmark (metric selection, values, grounding, refusal), dev/holdout, Wilson intervals | [eval/](eval/) |
+| Evaluation | Execution accuracy, research (metric selection, values, grounding, refusal), conversations, Daily Brief, dev/holdout written before any run, Wilson intervals; a manual-vs-no-LLM-vs-Pulse product evaluation, ready but not measured | [eval/](eval/) |
 
 More detail: [docs/architecture.md](docs/architecture.md) (both graphs, error taxonomy, boundaries).
 
@@ -173,6 +178,28 @@ vintages. Each daily load stores a value only when it is new or differs from the
 one, with the fetch day in the grain, so "what did DefiLlama say on day X" stays answerable from
 the day the pipeline started; earlier history is marked retrospective.
 
+**Workflows, not autonomous agents.** In every mode, code fixes the steps, the order and the
+limits (two SQL repairs, four planned metrics, one rewrite of the findings, ten brief tasks,
+a time and cost budget). The model fills narrow slots and each output is checked by code. For
+financial numbers that is the point: the same question takes the same path, every branch is
+tested, and the cost of a request has a ceiling.
+
+**Coins added at run time, through the same pipeline.** A typed coin is checked against Binance's
+list of USDT pairs (kept in Snowflake, refreshed daily), with "did you mean" for typos. A request
+row is claimed by the onboarding DAG with a status-guarded `UPDATE`, backfilled by the daily
+loader, built by dbt, and marked ready only once MART has it. Agent, resolver and UI read one list
+(`mart_asset_universe`), so nobody can ask about a coin that has no data yet.
+
+**Risk signals are rules, calibrated on history.** Abnormal moves, volatility spikes, drawdowns
+and chain TVL drops are computed in dbt from a reviewed seed, with windows that never look ahead
+and dbt unit tests at the threshold edge. How often each rule fires was measured before trusting
+it: the volatility threshold went from 1.5 to 2.0 when it fired on 8–15% of days. The model only
+reads the signals, and "not investment advice" is added by code.
+
+**A ceiling on cost, an id on every request.** Each request that may call the model reserves its
+maximum cost under a daily cap shared with the scheduled briefs, so parallel requests cannot pass
+it together. Every response, log line and Snowflake query carries the same request id.
+
 **No technology without a problem.** No vector database, no message queue, no Kubernetes: the
 data volume and the number of concepts do not need them. Each tool in the stack answers a
 specific need listed above.
@@ -196,6 +223,10 @@ A few things that were measured rather than assumed:
 - **Choosing the model by measurement.** gpt-4o-mini, gpt-4.1-mini and gpt-5-mini, three runs
   each on the same questions: gpt-4.1-mini matched the best accuracy, gave the same answers on
   every run and cut p95 latency from 10–15 s to about 3 s, for about twice the price.
+- **Two bugs that only real runs showed.** Airflow containers restarted with an old
+  configuration had no pools, so pooled tasks waited forever; and a catalog refresh deleted every
+  Binance pair on its second run, because `MERGE` leaves unchanged rows' timestamps alone. Both
+  are fixed, the second with an integration test that refreshes twice.
 - **A maintenance page served with HTTP 200.** FRED answered every request with an HTML page;
   the loader now retries a non-JSON 200 like a 5xx and fails with a clear error, and the
   freshness check turned the stale FRED data red instead of serving it silently.
@@ -203,7 +234,7 @@ A few things that were measured rather than assumed:
 ## Tech stack
 
 Python 3.11 · Snowflake · dbt 1.12 · Apache Airflow 3.3 · LangGraph 1.2 · OpenAI (`gpt-4.1-mini`,
-Structured Outputs) · sqlglot · FastAPI · Streamlit · Docker Compose · pytest · GitHub Actions
+Structured Outputs) · sqlglot · FastAPI · Streamlit · Docker Compose · Caddy · pytest · GitHub Actions
 
 ## Getting started
 
@@ -313,3 +344,7 @@ infra/snowflake/ one-off SQL to create warehouse, roles and users
 - [docs/risk_signals.md](docs/risk_signals.md): the risk rules, their tests and how often they fire.
 - [docs/upgrade_baseline.md](docs/upgrade_baseline.md): baseline, dependency upgrade and model A/B.
 - [docs/README.vi.md](docs/README.vi.md): detailed setup and operations guide in Vietnamese.
+- [FINSIGHT_LEARNING.md](FINSIGHT_LEARNING.md): a study guide in Vietnamese that walks through the whole code base, file by
+  file, with exercises and interview questions.
+- [FinSight_AI_Research_Copilot_Upgrade_Spec.md](FinSight_AI_Research_Copilot_Upgrade_Spec.md): the upgrade plan (v1.1)
+  for Research Copilot and FinSight Pulse, with the status of every task.

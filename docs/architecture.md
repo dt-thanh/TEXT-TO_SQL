@@ -1,13 +1,23 @@
 # Architecture
 
 This project separates HTTP transport, LangGraph orchestration, safety policy, and external
-adapters so each part can be implemented and tested independently. Two question modes share the
-same safety layers:
+adapters so each part can be implemented and tested independently. Four ways in share the same
+safety layers:
 
-- **Quick SQL** (`POST /ask`): the model writes one SQL query from the schema and the semantic
-  layer; a guard checks it; it runs as a read-only role.
-- **Research** (`POST /research`): the model only plans with a catalog of verified metrics; code
-  writes the SQL from templates; the model states findings; code checks every number.
+- **Quick SQL** (`POST /ask`, and `POST /chat` as a conversation): the model writes one SQL query
+  from the schema and the semantic layer; a guard checks it; it runs as a read-only role.
+- **Research** (`POST /research`, and `POST /research/chat`): the model only plans with a catalog
+  of verified metrics; code writes the SQL from templates; the model states findings; code checks
+  every number.
+- **Daily Brief** (`POST /brief`, and the Airflow task `generate_daily_brief`): the research graph
+  with a plan built in code from a watchlist.
+- **Conversation** (`src/agents/chat.py`): rules answer greetings and refuse advice or forecasts at
+  no cost; the first question goes to Quick SQL or Research unchanged; a follow-up is rewritten into
+  a standalone question by the model and the rewrite is shown.
+
+These are **LLM workflows, not autonomous agents**: code fixes the steps, their order and their
+limits, and checks every output of the model. The model never chooses a tool or decides when to
+stop.
 
 ## Text-to-SQL graph (src/agents/graph.py)
 
@@ -52,12 +62,39 @@ flowchart TD
   points, billion/tỷ, English and Vietnamese number formats) and accepts it only if it matches a
   cited result, a sample size, a parameter or a number from the question.
 - **Status** is decided by code: complete, partial, insufficient_data, declined, error.
-- **Budgets**: 4 tasks, 2 writes, 60 s, $0.01 per question.
+- **Budgets**: 4 tasks, 2 writes, 60 s, $0.01 per question; a brief has 10 tasks, 90 s, $0.02.
+- **Daily Brief** (`brief.py`): `build_research_graph(..., planner=code_planner)` replaces the plan
+  node; every other node is the same. Multi-row metrics (`symbol_list`, `row_key`) judge each asset
+  against `min_observations` on its own. Tables and risk signals are built by code from the
+  evidence, so a brief stands when the writer fails, every finding is dropped, or the LLM is off.
+
+## Control plane (src/control, schema CONTROL)
+
+- **Asset universe**: `assets.py` checks typed coins against `CONTROL.BINANCE_SYMBOL` (no Binance
+  call during a request) and suggests the pair meant on a typo; `request_asset` writes a
+  `requested` row. `onboarding.py` runs in the DAG `finsight_asset_onboarding`: claim with a
+  status-guarded `UPDATE`, verify, backfill with the daily loader, dbt build, `ready` once MART has
+  rows. The status in the registry is the hand-off between steps; nothing goes through XCom.
+- **Watchlists, saved briefs**: `watchlists.py`, `briefs.py`.
+- **Daily LLM cost cap**: `usage.py` reserves a request's maximum cost before it runs and records
+  the real cost in `CONTROL.API_USAGE`; the API and the scheduled brief share it.
+- **Identities**: CONTROL rows go through `FINSIGHT_APP` (API) or `FINSIGHT_ENGINEER` (Airflow);
+  market data is read through `FINSIGHT_AGENT` (MART only). LLM-written SQL never has write access.
+
+## Request path (src/main.py, src/api/security.py)
+
+Every request gets an id (`X-Request-ID`, kept if safe, else new) that is on the response, on every
+log line (text or JSON) and in each Snowflake `QUERY_TAG` (`finsight_agent:<id>`, `finsight_app:<id>`).
+`require_access` is one FastAPI dependency on every router but `/health`: nothing in
+`AUTH_MODE=local` (everything listens on 127.0.0.1), one service key compared in constant time in
+`AUTH_MODE=deployed` (the app refuses to start without it). Global sliding-window rate limits stop
+looping clients. Requests that use the LLM or write CONTROL add a row to `CONTROL.REQUEST_LOG`
+from a background thread; both graphs report the seconds spent in each node (`timings`).
 
 ## Dependency injection
 
 Nodes are plain functions `node(state, *, dependency)`. `build_graph(llm, warehouse, ...)` and
-`build_research_graph(llm, warehouse, layer)` bind the LLM client, the warehouse connection and the
+`build_research_graph(llm, warehouse, layer, planner=None)` bind the LLM client, the warehouse connection and the
 limits with `functools.partial`, so tests pass fakes and no node reads a global client.
 `answer_question` and `answer_research` build their graph per call and pass an explicit
 `recursion_limit` (LangGraph 1.x defaults to 10,007 steps).
@@ -79,11 +116,15 @@ seeing table functions (caught by a unit test during the upgrade).
 
 ## Boundaries
 
-- `ui` is a thin Streamlit client: it calls `POST /ask` and `POST /research`, imports nothing from
-  `src`, holds no secret.
+- `ui` is a thin Streamlit client with three tabs (Ask, Research report, Watchlist & Daily Brief):
+  it calls the API only, imports nothing from `src`, holds no Snowflake or OpenAI secret (in a
+  deployment, only the API's service key, server-side).
 - `src/api` owns HTTP contracts and routing; `src/models/schemas.py` is the contract.
 - `src/agents` owns state, nodes, edges, retry routing, and prompt building (`sql_generation.py`);
-  `src/agents/research` owns the research workflow, the catalog resolver and grounding.
+  `src/agents/research` owns the research workflow, the catalog resolver, grounding and the Daily
+  Brief; `src/agents/chat.py` owns the conversation rules and the follow-up rewriter.
+- `src/control` owns operating state in the CONTROL schema: asset registry and onboarding,
+  watchlists, saved briefs, the daily cost cap, the Airflow trigger.
 - `src/semantic` reads the semantic layer (`semantic/*.yml`) and picks context per question.
 - `src/services` owns provider adapters and the SQL safety boundary.
 - `src/ingestion` owns the sources (Binance, FRED, DefiLlama); `dbt/` owns every transformation.

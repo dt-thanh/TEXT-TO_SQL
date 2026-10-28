@@ -7013,6 +7013,30 @@ Mỗi câu: **Question** · **Suggested answer** (ngắn, dựa trên code) · *
   danh mục Binance bị xoá ở lần làm mới thứ hai.
 - **Follow-up**: Vì sao unit test không bắt được bug MERGE? (Warehouse giả không mô phỏng ngữ nghĩa MERGE → cần test thật.)
 
+### 28. Đây là agent hay workflow?
+
+- **Suggested answer**: "Là **LLM workflow** (agentic workflow) xây bằng LangGraph, không phải agent tự hành. Code quyết định
+  các bước, thứ tự và giới hạn: tối đa 2 lần sửa SQL, 4 chỉ số trong kế hoạch, 1 lần viết lại nhận định, 10 task của brief,
+  trần thời gian và chi phí. LLM chỉ làm việc hẹp — viết SQL, chọn chỉ số trong catalog, viết lại câu nối tiếp, viết nhận
+  định — và mọi đầu ra đều được code kiểm tra. Hai chỗ có chút tính agent (vòng tự sửa SQL, planner chọn chỉ số) đều bị code
+  giới hạn chặt."
+- **Vì sao chọn workflow**: dữ liệu tài chính cần đúng và lặp lại được (cùng câu hỏi đi cùng một đường, test được từng nhánh),
+  rủi ro phải giới hạn (LLM không tự quyết truy cập gì), chi phí phải có trần.
+- **Follow-up**: "Sao không làm agent?" → bài toán có quy trình rõ; chỉ cân nhắc agent tự hành cho việc khám phá mở, và vẫn đặt
+  giới hạn bước/chi phí. Tên thư mục `src/agents/` là cách gọi quen từ spec ban đầu.
+
+### 29. Project có dùng MCP để kết nối kho dữ liệu không?
+
+- **Suggested answer**: "Không. Kết nối Snowflake bằng driver chính thức (`snowflake-connector-python`, `dbt-snowflake`), đi
+  qua một lớp `SnowflakeClient` với ba danh tính tách quyền. AI trong FinSight không tự đi lấy dữ liệu: nó đề xuất SQL hoặc
+  chỉ số, còn code kiểm tra và thực thi bằng role chỉ đọc. Thêm MCP để LLM tự gọi tool truy vấn kho sẽ không bỏ được lớp kiểm
+  soát nào, chỉ thêm một tầng."
+- **Khi nào MCP hợp lý**: khi muốn **mở FinSight thành công cụ** cho AI client khác (Claude Desktop, IDE): viết MCP server
+  bọc chính API hiện có (`ask`, `research`, `watchlist`, `brief`), để mọi lớp bảo vệ vẫn nằm trong FinSight. Không nối MCP
+  thẳng vào kho, vì như vậy là bỏ qua guard và catalog.
+- **Follow-up**: MCP là gì? (Giao thức chuẩn để ứng dụng AI gọi tool/nguồn dữ liệu qua một server.) Rủi ro an ninh của việc
+  để LLM tự chọn tool truy cập dữ liệu?
+
 ---
 
 # FinSight AI Cheat Sheet
